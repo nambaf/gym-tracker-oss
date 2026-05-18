@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f1ec"/>
+      <stop offset="100%" stop-color="#ebe7df"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Paper background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Decorative coral glow in bottom-right (kept inside the safe-area, doesn't crowd text) -->
+  <circle cx="1240" cy="640" r="260" fill="#d6492a" opacity="0.06"/>
+  <circle cx="1240" cy="640" r="140" fill="#d6492a" opacity="0.10"/>
+
+  <!-- Eyebrow -->
+  <text x="80" y="130"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="22" font-weight="700"
+        fill="#d6492a" letter-spacing="3">OPEN SOURCE · SELF-HOSTED · MIT</text>
+
+  <!-- Title -->
+  <text x="80" y="280"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="128" font-weight="400"
+        fill="#1a1916" letter-spacing="-3">Gym Tracker</text>
+
+  <!-- Coral divider -->
+  <rect x="80" y="308" width="120" height="5" rx="2" fill="#d6492a"/>
+
+  <!-- Tagline (two lines) -->
+  <text x="80" y="395"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="34" font-weight="400" fill="#3d3b36">Mobile-first gym workout tracker with</text>
+  <text x="80" y="443"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="34" font-weight="400" fill="#3d3b36">AI coaching, self-hosted on your AWS.</text>
+
+  <!-- Bottom row: stack on the left, URL on the right -->
+  <text x="80" y="560"
+        font-family="Menlo, Consolas, 'Courier New', monospace"
+        font-size="20" fill="#6b6962">Next.js · Cognito · DynamoDB · 4 AI providers</text>
+
+  <text x="1200" y="560" text-anchor="end"
+        font-family="Menlo, Consolas, 'Courier New', monospace"
+        font-size="20" font-weight="600" fill="#1a1916">github.com/nambaf/gym-tracker-oss</text>
+</svg>
