@@ -1,0 +1,493 @@
+---
+import Base from '../layouts/Base.astro';
+
+const REPO_URL = 'https://github.com/nambaf/gym-tracker-oss';
+const README_URL = `${REPO_URL}#quick-start`;
+
+// Public assets must be prefixed with the configured `base` when deployed on a
+// GitHub Pages project site (https://nambaf.github.io/gym-tracker-oss/).
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+const shot = (name: string) => `${BASE}/screenshots/${name}`;
+---
+<Base>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="#top" class="nav-brand">Gym Tracker</a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#product">Product</a>
+        <a href="#behind">Behind the build</a>
+        <a href="#deploy">Deploy</a>
+        <a href={REPO_URL} class="nav-cta">GitHub →</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ───────── Hero ───────── -->
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">Open source · MIT</span>
+          <h1>
+            Track your lifts.<br />
+            <span class="hero-accent">Own your data.</span>
+          </h1>
+          <p class="hero-sub">
+            A mobile-first gym workout tracker with built-in AI coaching,
+            self-hosted on your own AWS account. No SaaS, no subscriptions,
+            no one else holding your training history.
+          </p>
+          <div class="hero-ctas">
+            <a class="btn btn-primary" href={REPO_URL}>View on GitHub</a>
+            <a class="btn btn-secondary" href="#product">See what it does</a>
+          </div>
+          <p class="hero-meta">
+            Next.js 16 · AWS Cognito · DynamoDB · 4 swappable AI providers
+          </p>
+        </div>
+
+        <div class="hero-visual">
+          <img
+            class="hero-screenshot"
+            src={shot('example-workout.png')}
+            alt="Workout screen — logging a set of incline dumbbell press, with prior session reference and suggested working weight."
+            width="320"
+            height="694"
+            loading="eager"
+          />
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Product ───────── -->
+    <section id="product" class="band-surface">
+      <div class="container">
+        <span class="eyebrow">What it does</span>
+        <h2>Everything you need in the gym, nothing you don't.</h2>
+        <ul class="feature-grid">
+          <li>
+            <h3>Live workout logging</h3>
+            <p>Set, reps, weight, RPE — with a rest timer and per-exercise history right next to the input.</p>
+          </li>
+          <li>
+            <h3>Multi-plan scheduler</h3>
+            <p>Run full-body, push/pull/legs, or whatever split fits the week. Activate one plan, keep the rest as drafts.</p>
+          </li>
+          <li>
+            <h3>AI coach</h3>
+            <p>Per-session debriefs and weekly volume reviews. Pick the model: Bedrock, Gemini, OpenAI, Anthropic, or off.</p>
+          </li>
+          <li>
+            <h3>Body map &amp; charts</h3>
+            <p>Weekly muscle-group coverage, volume and intensity trends, a 2-week activity heatmap.</p>
+          </li>
+          <li>
+            <h3>History that's actually useful</h3>
+            <p>Drill into any past session, edit a stray set, or open an exercise to see every rep you've ever logged for it.</p>
+          </li>
+          <li>
+            <h3>Bilingual UI</h3>
+            <p>Italian and English, switchable from the profile. AI coach replies follow the same language setting.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ───────── Screenshots ───────── -->
+    <section class="shots">
+      <div class="container">
+        <div class="shots-row">
+          <figure class="shot">
+            <img class="shot-img" src={shot('example-plan.png')} alt="Plan editor showing a 3-day full-body plan with a volume-overload warning highlighting per-muscle set caps." loading="lazy" />
+            <figcaption>
+              <h3>Plan editor with volume guardrails</h3>
+              <p>Schedule the week, then let the app flag when you've stacked too many sets on one muscle group. The 14-set chest day above lights up because it's over the configured limit — tunable per muscle from your profile.</p>
+            </figcaption>
+          </figure>
+
+          <figure class="shot">
+            <img class="shot-img" src={shot('example-history.png')} alt="History feed of past sessions, each annotated with the muscles worked drawn on a body map and totals for sets, volume, and RPE." loading="lazy" />
+            <figcaption>
+              <h3>History that explains itself</h3>
+              <p>Every past session shows up with the muscles you actually worked rendered on a body map. Sets, total kg-rep volume, average RPE — enough to know how the week went without opening a single record.</p>
+            </figcaption>
+          </figure>
+
+          <figure class="shot">
+            <img class="shot-img" src={shot('example-coach-ai.png')} alt="AI coach weekly review listing specific recommendations — add a back session with 12 sets distributed across two days." loading="lazy" />
+            <figcaption>
+              <h3>An AI coach that does the math</h3>
+              <p>The weekly review reads your real volume against the plan and writes back specific moves: "add 12 back sets, split between Monday and Wednesday, here's the breakdown." Same prompt across Bedrock, Gemini, OpenAI, or Anthropic.</p>
+            </figcaption>
+          </figure>
+
+          <figure class="shot">
+            <img class="shot-img" src={shot('example-profile.png')} alt="Profile page with an athlete description free-form field, an additional-notes field, and a training-mode selector." loading="lazy" />
+            <figcaption>
+              <h3>Profile that personalises the coach</h3>
+              <p>Your athlete description and free-form notes are pasted verbatim into every coach prompt. Tell it once that you're 32, 72kg, hypertrophy-focused, and to avoid squats for a knee issue — every suggestion afterwards respects that.</p>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Behind the build ───────── -->
+    <section id="behind" class="band-surface">
+      <div class="container">
+        <span class="eyebrow">Behind the build</span>
+        <h2>A few engineering choices, for the curious.</h2>
+        <p class="section-lead">
+          The project is a personal one, but the decisions are documented.
+          Here are the ones that aren't obvious from the README.
+        </p>
+
+        <div class="decision-grid">
+          <article class="decision">
+            <h3>Direct DynamoDB, no API Gateway</h3>
+            <p>
+              Next.js server actions talk to DynamoDB through an IAM role bound to
+              the Amplify SSR runtime. One layer less than the typical AWS web stack,
+              same auth boundary — the browser still only sees Next.js endpoints
+              behind a Cognito-validated cookie.
+            </p>
+          </article>
+
+          <article class="decision">
+            <h3>AI provider abstraction</h3>
+            <p>
+              A single <code>generateText</code> dispatcher sits behind four backends.
+              Swap with one env var; prompts stay portable. The coach was rebuilt
+              against Bedrock, Gemini, OpenAI and Anthropic without touching the
+              prompt code.
+            </p>
+          </article>
+
+          <article class="decision">
+            <h3>i18n without a library</h3>
+            <p>
+              A tiny dictionary module typed against a single <code>Dictionary</code>
+              interface — both locales must compile, so a missing translation breaks
+              the build, not production. No URL prefixes, no SSR/CSR mismatches,
+              no runtime negotiation in the hot path.
+            </p>
+          </article>
+
+          <article class="decision">
+            <h3>The coach prompt is yours to shape</h3>
+            <p>
+              The Profile page holds an athlete description and a free-form notes
+              field. Both are pasted verbatim into every AI coach prompt — so the
+              suggestions account for your age, goals, and quirks ("no squats,
+              bad knee") without you re-explaining them every week. No forking,
+              no env-var sprawl: the same row drives the rest of the app.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Stack ───────── -->
+    <section class="stack">
+      <div class="container">
+        <span class="eyebrow">Stack</span>
+        <div class="stack-chips">
+          <span>Next.js 16</span>
+          <span>React</span>
+          <span>TypeScript</span>
+          <span>Tailwind</span>
+          <span>Zustand</span>
+          <span>AWS Cognito</span>
+          <span>DynamoDB</span>
+          <span>AWS Amplify</span>
+          <span>AWS SAM</span>
+          <span>Bedrock</span>
+          <span>Gemini</span>
+          <span>OpenAI</span>
+          <span>Anthropic</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Deploy ───────── -->
+    <section id="deploy" class="band-surface">
+      <div class="container">
+        <span class="eyebrow">Deploy your own</span>
+        <h2>From fork to live app in about ten minutes.</h2>
+        <ol class="deploy-steps">
+          <li>
+            <h3>1. Fork the repo</h3>
+            <p>Clone your fork locally. The infra and the web app live in the same tree.</p>
+          </li>
+          <li>
+            <h3>2. <code>sam deploy --guided</code></h3>
+            <p>One SAM template provisions a Cognito user pool, 5 DynamoDB tables, the runtime IAM policy, and the compute role for Amplify SSR.</p>
+          </li>
+          <li>
+            <h3>3. Connect Amplify</h3>
+            <p>Point Amplify at your fork, paste the six env vars from the SAM outputs, bind the compute role, deploy.</p>
+          </li>
+          <li>
+            <h3>4. Open <code>/setup</code></h3>
+            <p>First login on an empty stack lands on the setup wizard: two clicks seed ~27 default exercises (in your language) and a 2-day starter plan you can edit from there.</p>
+          </li>
+        </ol>
+        <p class="deploy-cta">
+          <a class="btn btn-primary" href={README_URL}>Read the full guide →</a>
+          <span class="deploy-note muted">Every step is documented in the repo README — IAM bindings, env vars, the lot.</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- ───────── Footer ───────── -->
+    <footer class="footer">
+      <div class="container footer-inner">
+        <p>
+          Built by <strong>Marco Di Felice</strong> — released under the MIT License.
+        </p>
+        <p class="muted">
+          <a href={REPO_URL}>GitHub</a> ·
+          <a href={`${REPO_URL}/blob/main/LICENSE`}>License</a> ·
+          <a href={`${REPO_URL}/blob/main/CONTRIBUTING.md`}>Contributing</a>
+        </p>
+      </div>
+    </footer>
+  </main>
+</Base>
+
+<style>
+  /* ───────── Nav ───────── */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: saturate(180%) blur(8px);
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+  }
+  .nav-brand {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    color: var(--ink);
+    text-decoration: none;
+    letter-spacing: -0.01em;
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.75rem, 2.5vw, 1.5rem);
+    font-size: 0.92rem;
+  }
+  .nav-links a {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta {
+    color: var(--accent-deep) !important;
+    font-weight: 500;
+  }
+  @media (max-width: 540px) {
+    .nav-links a:not(.nav-cta) { display: none; }
+  }
+
+  /* ───────── Hero ───────── */
+  .hero { padding-top: clamp(3rem, 7vw, 5rem); padding-bottom: clamp(3rem, 7vw, 5rem); }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: clamp(2rem, 5vw, 4rem);
+    align-items: center;
+  }
+  @media (max-width: 760px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-visual { order: -1; justify-self: center; }
+  }
+  .hero-accent { color: var(--accent); }
+  .hero-sub {
+    margin-top: 1.25rem;
+    font-size: clamp(1.05rem, 1.4vw, 1.15rem);
+    color: var(--ink-soft);
+    max-width: 36ch;
+  }
+  .hero-ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.75rem;
+  }
+  .hero-meta {
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+    font-family: var(--font-mono);
+  }
+
+  /* Hero screenshot (real iPhone capture) */
+  .hero-visual { display: flex; justify-content: center; }
+  .hero-screenshot {
+    width: 280px;
+    max-width: 100%;
+    height: auto;
+    border-radius: 38px;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.6) inset,
+      0 30px 60px -20px rgba(26, 25, 22, 0.35),
+      0 12px 24px -12px rgba(26, 25, 22, 0.25);
+    display: block;
+  }
+  @media (max-width: 760px) {
+    .hero-screenshot { width: 240px; }
+  }
+
+  /* ───────── Sections with paper-card background ───────── */
+  .band-surface {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-lead {
+    margin-top: 1rem;
+    color: var(--ink-soft);
+    max-width: 56ch;
+  }
+
+  /* ───────── Feature grid ───────── */
+  .feature-grid {
+    list-style: none;
+    padding: 0;
+    margin: 2rem 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.5rem 2rem;
+  }
+  .feature-grid h3 { margin-bottom: 0.35rem; }
+  .feature-grid p { color: var(--ink-soft); font-size: 0.95rem; }
+
+  /* ───────── Screenshots ───────── */
+  .shots-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: clamp(2rem, 4vw, 3rem) clamp(1.5rem, 3vw, 2.5rem);
+  }
+  @media (max-width: 680px) {
+    .shots-row { grid-template-columns: 1fr; }
+  }
+  .shot {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 1.25rem;
+    align-items: start;
+  }
+  @media (max-width: 480px) {
+    .shot { grid-template-columns: 1fr; }
+  }
+  .shot-img {
+    width: 100%;
+    height: auto;
+    border-radius: 22px;
+    display: block;
+    box-shadow:
+      0 12px 24px -12px rgba(26, 25, 22, 0.25),
+      0 4px 8px -4px rgba(26, 25, 22, 0.15);
+  }
+  @media (max-width: 480px) {
+    .shot-img { max-width: 220px; margin: 0 auto; }
+  }
+  .shot figcaption h3 { margin-bottom: 0.4rem; }
+  .shot figcaption p {
+    color: var(--ink-soft);
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  /* ───────── Decisions grid ───────── */
+  .decision-grid {
+    margin-top: 2.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+  .decision {
+    padding: 1.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .decision h3 {
+    margin-bottom: 0.5rem;
+    color: var(--ink);
+  }
+  .decision h3::before {
+    content: '▸ ';
+    color: var(--accent);
+  }
+  .decision p { color: var(--ink-soft); font-size: 0.95rem; }
+
+  /* ───────── Stack chips ───────── */
+  .stack-chips {
+    margin-top: 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .stack-chips span {
+    padding: 0.35rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    color: var(--ink-soft);
+  }
+
+  /* ───────── Deploy ───────── */
+  .deploy-steps {
+    margin: 2rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+  }
+  .deploy-steps li {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem 1.25rem 1.5rem;
+  }
+  .deploy-steps h3 { margin-bottom: 0.4rem; }
+  .deploy-steps p { color: var(--ink-soft); font-size: 0.92rem; }
+  .deploy-cta {
+    margin-top: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+  .deploy-note { font-size: 0.85rem; }
+
+  /* ───────── Footer ───────── */
+  .footer {
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    padding: 2rem 0;
+  }
+  .footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.9rem;
+  }
+  .footer a { color: var(--ink-soft); }
+  .footer a:hover { color: var(--accent-deep); }
+</style>
