@@ -1,0 +1,13 @@
+# Astro build output and cache
+dist/
+.astro/
+
+# Dependencies
+node_modules/
+
+# Local env (the site is fully static — nothing secret should be here, but just in case)
+.env
+.env.local
+
+# OS
+.DS_Store
