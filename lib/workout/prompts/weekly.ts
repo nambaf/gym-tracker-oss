@@ -1,7 +1,6 @@
 import type { TrainingMode } from '../../hypertrophyThresholds'
 import type { Lang } from '../../i18n'
-import { ATHLETE_PROFILE, ATHLETE_NOTES } from './profile'
-import { TRAINING_MODE_DESC, THRESHOLDS_BY_MODE } from './training-modes'
+import { TRAINING_MODE_DESC } from './training-modes'
 
 export interface WeeklyPromptInput {
   lang: Lang
@@ -12,13 +11,12 @@ export interface WeeklyPromptInput {
   volumeSummary: string
   /** Missing exercises summary, e.g. "- Squat: 4 sets remaining". */
   missingSummary: string
+  athleteProfile: string
+  athleteNotes: string
 }
 
 /**
  * Prompt for `analyzeWeeklyProgress`: short comment on the user's weekly progress.
- *
- * CUSTOMIZE: tweak tone/length in the INSTRUCTIONS block below. Keep
- * `${input.*}` placeholders if you change structure.
  */
 export function buildWeeklyAnalysisPrompt(input: WeeklyPromptInput): string {
   if (input.lang === 'en') return buildEn(input)
@@ -26,11 +24,11 @@ export function buildWeeklyAnalysisPrompt(input: WeeklyPromptInput): string {
 }
 
 function buildIt(input: WeeklyPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? `\nNOTE UTENTE: ${ATHLETE_NOTES}` : ''
+  const notesBlock = input.athleteNotes ? `\nNOTE UTENTE: ${input.athleteNotes}` : ''
   return `
 Sei un coach di bodybuilding esperto in ipertrofia. Analizza i progressi settimanali dell'utente.
 
-PROFILO ATLETA: ${ATHLETE_PROFILE}${notesBlock}
+PROFILO ATLETA: ${input.athleteProfile}${notesBlock}
 APPROCCIO: ${TRAINING_MODE_DESC.it[input.trainingMode]}
 
 DATI SETTIMANA CORRENTE:
@@ -39,9 +37,6 @@ DATI SETTIMANA CORRENTE:
 
 VOLUME PER GRUPPO MUSCOLARE (completato vs pianificato):
 ${input.volumeSummary}
-
-SOGLIE DI RIFERIMENTO (hard set settimanali per modalità ${input.trainingMode}):
-${THRESHOLDS_BY_MODE.it[input.trainingMode]}
 
 ESERCIZI MANCANTI DAL PIANO:
 ${input.missingSummary}
@@ -56,11 +51,11 @@ ISTRUZIONI:
 }
 
 function buildEn(input: WeeklyPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? `\nUSER NOTES: ${ATHLETE_NOTES}` : ''
+  const notesBlock = input.athleteNotes ? `\nUSER NOTES: ${input.athleteNotes}` : ''
   return `
 You are a hypertrophy-focused bodybuilding coach. Analyze the user's weekly progress.
 
-ATHLETE PROFILE: ${ATHLETE_PROFILE}${notesBlock}
+ATHLETE PROFILE: ${input.athleteProfile}${notesBlock}
 APPROACH: ${TRAINING_MODE_DESC.en[input.trainingMode]}
 
 CURRENT WEEK DATA:
@@ -69,9 +64,6 @@ CURRENT WEEK DATA:
 
 VOLUME PER MUSCLE GROUP (done vs planned):
 ${input.volumeSummary}
-
-REFERENCE THRESHOLDS (weekly hard sets, ${input.trainingMode} mode):
-${THRESHOLDS_BY_MODE.en[input.trainingMode]}
 
 MISSING EXERCISES FROM PLAN:
 ${input.missingSummary}

@@ -4,6 +4,7 @@ export type Dictionary = {
     workout: string
     history: string
     plan: string
+    profile: string
   }
   login: {
     eyebrow: string
@@ -419,6 +420,47 @@ export type Dictionary = {
       blockedNoExercises: string
       errorGeneric: string
     }
+    settings: {
+      title: string
+      body: string
+      btn: string
+      btnRunning: string
+      alreadyInit: string
+      errorGeneric: string
+    }
+  }
+  profile: {
+    title: string
+    subtitle: string
+    save: string
+    saving: string
+    saved: string
+    errorGeneric: string
+    sectionBasic: string
+    sectionAdvanced: string
+    sectionMatrices: string
+    comingSoon: string
+    resetSection: string
+    resetConfirm: string
+    basic: {
+      athleteProfile: { label: string; placeholder: string; helper: string }
+      athleteNotes: { label: string; placeholder: string; helper: string }
+      trainingMode: { label: string }
+      deload: { label: string; helper: string }
+    }
+    advanced: {
+      maxSetsPerSession: { label: string; helper: string }
+      restCompound: { label: string; helper: string }
+      restStandard: { label: string; helper: string }
+      restIsolation: { label: string; helper: string }
+      restSecondsSuffix: string
+      compoundMuscles: { label: string; placeholder: string; helper: string }
+      isolationMuscles: { label: string; placeholder: string; helper: string }
+    }
+    matrices: {
+      thresholds: { title: string; helper: string; fieldA: string; fieldB: string }
+      recommendedSets: { title: string; helper: string; fieldA: string; fieldB: string }
+    }
   }
 }
 
@@ -428,6 +470,7 @@ export const it: Dictionary = {
     workout: 'Workout',
     history: 'Storico',
     plan: 'Piano',
+    profile: 'Profilo',
   },
   login: {
     eyebrow: 'Gym Tracker',
@@ -844,7 +887,7 @@ export const it: Dictionary = {
   },
   setup: {
     title: 'Setup iniziale',
-    subtitle: 'Due passaggi opzionali per partire subito. Puoi saltarli e configurare tutto a mano dal Piano.',
+    subtitle: 'Tre passaggi opzionali per partire subito. Puoi saltarli e configurare tutto a mano dal Piano.',
     skip: 'Salta e vai alla dashboard',
     allDone: 'Setup completato.',
     allDoneCta: 'Vai alla dashboard',
@@ -864,6 +907,90 @@ export const it: Dictionary = {
       btnRunning: 'Creazione…',
       blockedNoExercises: 'Carica prima gli esercizi.',
       errorGeneric: 'Errore nella creazione del piano.',
+    },
+    settings: {
+      title: '3 · Impostazioni profilo (opzionale)',
+      body: 'Crea il record di impostazioni. Ogni valore resta sui default finché non lo modifichi dalla pagina Profilo.',
+      btn: 'Inizializza',
+      btnRunning: 'Inizializzazione…',
+      alreadyInit: 'Già inizializzato.',
+      errorGeneric: 'Errore nell\'inizializzazione delle impostazioni.',
+    },
+  },
+  profile: {
+    title: 'Profilo & impostazioni',
+    subtitle: 'Profilo atleta, approccio di allenamento e soglie avanzate. I valori non impostati ricadono sui default.',
+    save: 'Salva',
+    saving: 'Salvataggio…',
+    saved: 'Salvato',
+    errorGeneric: 'Errore nel salvataggio.',
+    sectionBasic: 'Base',
+    sectionAdvanced: 'Avanzate',
+    sectionMatrices: 'Avanzate — matrici',
+    comingSoon: 'Disponibile a breve.',
+    resetSection: 'Ripristina ai default',
+    resetConfirm: 'Ripristinare questa sezione ai default?',
+    basic: {
+      athleteProfile: {
+        label: 'Profilo atleta',
+        placeholder: 'es. intermedio, 80kg, obiettivo ipertrofia',
+        helper: 'Riga libera passata come contesto a ogni prompt del coach AI.',
+      },
+      athleteNotes: {
+        label: 'Note aggiuntive',
+        placeholder: 'es. niente squat per problema al ginocchio',
+        helper: 'Note che il coach dovrebbe sempre tenere a mente.',
+      },
+      trainingMode: {
+        label: 'Approccio di allenamento',
+      },
+      deload: {
+        label: 'Modalità deload',
+        helper: 'Riduce il volume suggerito per la fase di recupero.',
+      },
+    },
+    advanced: {
+      maxSetsPerSession: {
+        label: 'Set massimi per muscolo per sessione',
+        helper: 'Oltre questa soglia, il volume aggiuntivo rende sempre meno (junk volume). Range consigliato: 4–20.',
+      },
+      restCompound: {
+        label: 'Recupero — multi-articolare',
+        helper: 'Tempo di recupero per movimenti pesanti multi-articolari (squat, panca, stacco).',
+      },
+      restStandard: {
+        label: 'Recupero — standard',
+        helper: 'Tempo di recupero per esercizi misti o monoarticolari pesanti.',
+      },
+      restIsolation: {
+        label: 'Recupero — isolamento',
+        helper: 'Tempo di recupero per esercizi di isolamento (curl, alzate laterali, push-down).',
+      },
+      restSecondsSuffix: 'sec',
+      compoundMuscles: {
+        label: 'Muscoli "multi-articolari"',
+        placeholder: 'quadricipiti, glutei, dorsali, petto…',
+        helper: 'Lista separata da virgole. Lowercase. Usato per scegliere il preset di recupero.',
+      },
+      isolationMuscles: {
+        label: 'Muscoli di "isolamento"',
+        placeholder: 'bicipiti, tricipiti, polpacci…',
+        helper: 'Lista separata da virgole. Lowercase. Usato per scegliere il preset di recupero.',
+      },
+    },
+    matrices: {
+      thresholds: {
+        title: 'Soglie ipertrofia (hard set settimanali)',
+        helper: 'Per ogni muscolo: minimo per mantenere la massa vs soglia di ipertrofia attiva.',
+        fieldA: 'Mant.',
+        fieldB: 'Iper.',
+      },
+      recommendedSets: {
+        title: 'Set raccomandati (completezza piano)',
+        helper: 'Per ogni muscolo: minimo per essere coperto dal piano vs ottimale.',
+        fieldA: 'Min.',
+        fieldB: 'Ott.',
+      },
     },
   },
 }

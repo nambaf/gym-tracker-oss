@@ -9,23 +9,30 @@ import { useT } from '@/lib/i18n/I18nProvider'
 export default function SetupPage() {
   const t = useT()
   const router = useRouter()
-  const { exercises, plan, loadExercises, loadPlan, invalidate } = useDataStore()
+  const {
+    exercises, plan, storedSettings,
+    loadExercises, loadPlan, loadSettings, invalidate,
+  } = useDataStore()
 
   const [seedingExercises, setSeedingExercises] = useState(false)
   const [exercisesError, setExercisesError] = useState<string | null>(null)
   const [seedingPlan, setSeedingPlan] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
+  const [initingSettings, setInitingSettings] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
 
   useEffect(() => {
     loadExercises()
     loadPlan()
-  }, [loadExercises, loadPlan])
+    loadSettings()
+  }, [loadExercises, loadPlan, loadSettings])
 
   const exercisesLoaded = exercises.status === 'success'
   const planLoaded = plan.status === 'success'
   const exercisesDone = exercisesLoaded && (exercises.data || []).length > 0
   const planDone = planLoaded && (plan.data || []).length > 0
-  const allDone = exercisesDone && planDone
+  const settingsDone = storedSettings.id === 'global'
+  const allDone = exercisesDone && planDone && settingsDone
 
   async function runSeedExercises() {
     if (seedingExercises) return
@@ -62,6 +69,24 @@ export default function SetupPage() {
       setPlanError(t.setup.plan.errorGeneric)
     } finally {
       setSeedingPlan(false)
+    }
+  }
+
+  async function runInitSettings() {
+    if (initingSettings) return
+    setSettingsError(null)
+    setInitingSettings(true)
+    try {
+      const res = await fetch('/api/data/settings/init', { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error || `HTTP ${res.status}`)
+      }
+      await loadSettings(true)
+    } catch (_e) {
+      setSettingsError(t.setup.settings.errorGeneric)
+    } finally {
+      setInitingSettings(false)
     }
   }
 
@@ -113,6 +138,25 @@ export default function SetupPage() {
           </>
         )}
         {planError && <p className="text-xs text-danger mt-2">{planError}</p>}
+      </SetupCard>
+
+      <SetupCard
+        title={t.setup.settings.title}
+        body={t.setup.settings.body}
+        done={settingsDone}
+        statusPending={t.setup.statusPending}
+        statusDone={t.setup.statusDone}
+      >
+        {!settingsDone && (
+          <button
+            onClick={runInitSettings}
+            disabled={initingSettings}
+            className="btn-primary text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {initingSettings ? t.setup.settings.btnRunning : t.setup.settings.btn}
+          </button>
+        )}
+        {settingsError && <p className="text-xs text-danger mt-2">{settingsError}</p>}
       </SetupCard>
 
       <div className="pt-2">

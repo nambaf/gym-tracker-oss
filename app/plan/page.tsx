@@ -81,6 +81,7 @@ export default function PlanPage() {
     deloadActive, setDeloadActive,
     trainingMode, setTrainingMode,
     sessions, sets, loadSessions, loadSets,
+    storedSettings,
   } = useDataStore()
 
   useEffect(() => {
@@ -201,8 +202,10 @@ export default function PlanPage() {
       day: r.day, exerciseId: r.exerciseId, targetSets: r.targetSets,
       targetReps: r.targetReps, targetRpe: r.targetRpe ?? undefined,
     }))
-    return analyzePlanCompleteness(planRows, exercises.data || [], trainingMode)
-  }, [rows, exercises, trainingMode])
+    return analyzePlanCompleteness(planRows, exercises.data || [], trainingMode, {
+      recommendedSets: storedSettings.recommendedSets,
+    })
+  }, [rows, exercises, trainingMode, storedSettings.recommendedSets])
 
   const sessionWarnings = useMemo(() => {
     if (exercises.status !== 'success' || rows.length === 0) return []
@@ -210,8 +213,10 @@ export default function PlanPage() {
       day: r.day, exerciseId: r.exerciseId, targetSets: r.targetSets,
       targetReps: r.targetReps, targetRpe: r.targetRpe ?? undefined,
     }))
-    return analyzeSessionVolume(planRows, exercises.data || [])
-  }, [rows, exercises])
+    return analyzeSessionVolume(planRows, exercises.data || [], {
+      maxSetsPerSessionPerMuscle: storedSettings.maxSetsPerSessionPerMuscle,
+    })
+  }, [rows, exercises, storedSettings.maxSetsPerSessionPerMuscle])
 
   function switchPlan(id: string) {
     if (dirty && !confirm(t.plan.prompts.switchDirty)) return

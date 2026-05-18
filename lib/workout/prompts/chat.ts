@@ -1,6 +1,5 @@
 import type { TrainingMode } from '../../hypertrophyThresholds'
 import type { Lang } from '../../i18n'
-import { ATHLETE_PROFILE, ATHLETE_NOTES } from './profile'
 import { TRAINING_MODE_DESC } from './training-modes'
 
 export interface ChatPromptInput {
@@ -11,6 +10,8 @@ export interface ChatPromptInput {
   contextBlock?: string
   /** Formatted conversation history: "USER: ...\n\nCOACH: ...". */
   history: string
+  athleteProfile: string
+  athleteNotes: string
 }
 
 /**
@@ -22,14 +23,14 @@ export function buildChatPrompt(input: ChatPromptInput): string {
 }
 
 function buildIt(input: ChatPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? `\nNOTE UTENTE: ${ATHLETE_NOTES}` : ''
+  const notesBlock = input.athleteNotes ? `\nNOTE UTENTE: ${input.athleteNotes}` : ''
   const extra = input.contextBlock ? `\n${input.contextBlock}` : ''
   return `
 Sei un coach di bodybuilding esperto. Rispondi alle domande dell'utente sul suo allenamento.
 
 CONTESTO UTENTE:
 OGGI: ${input.todayString}
-PROFILO: ${ATHLETE_PROFILE}${notesBlock}
+PROFILO: ${input.athleteProfile}${notesBlock}
 APPROCCIO: ${TRAINING_MODE_DESC.it[input.trainingMode]}${extra}
 
 CONVERSAZIONE:
@@ -47,14 +48,14 @@ ISTRUZIONI:
 }
 
 function buildEn(input: ChatPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? `\nUSER NOTES: ${ATHLETE_NOTES}` : ''
+  const notesBlock = input.athleteNotes ? `\nUSER NOTES: ${input.athleteNotes}` : ''
   const extra = input.contextBlock ? `\n${input.contextBlock}` : ''
   return `
 You are an experienced bodybuilding coach. Answer the user's training questions.
 
 USER CONTEXT:
 TODAY: ${input.todayString}
-PROFILE: ${ATHLETE_PROFILE}${notesBlock}
+PROFILE: ${input.athleteProfile}${notesBlock}
 APPROACH: ${TRAINING_MODE_DESC.en[input.trainingMode]}${extra}
 
 CONVERSATION:

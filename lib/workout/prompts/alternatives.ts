@@ -1,5 +1,4 @@
 import type { Lang } from '../../i18n'
-import { ATHLETE_PROFILE, ATHLETE_NOTES } from './profile'
 
 export interface AlternativesPromptInput {
   lang: Lang
@@ -7,6 +6,8 @@ export interface AlternativesPromptInput {
   /** CSV of available exercise names from the local DB. */
   availableExercises: string
   reason?: string
+  athleteProfile: string
+  athleteNotes: string
 }
 
 /**
@@ -18,10 +19,10 @@ export function buildAlternativesPrompt(input: AlternativesPromptInput): string 
 }
 
 function buildIt(input: AlternativesPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? ` Note: ${ATHLETE_NOTES}.` : ''
+  const notesBlock = input.athleteNotes ? ` Note: ${input.athleteNotes}.` : ''
   const reasonBlock = input.reason ? ` perché ${input.reason}` : ''
   return `
-Sei un coach di bodybuilding. L'utente (${ATHLETE_PROFILE})${notesBlock} cerca alternative all'esercizio "${input.exerciseName}"${reasonBlock}.
+Sei un coach di bodybuilding. L'utente (${input.athleteProfile})${notesBlock} cerca alternative all'esercizio "${input.exerciseName}"${reasonBlock}.
 
 ESERCIZI DISPONIBILI NEL DATABASE:
 ${input.availableExercises}
@@ -36,10 +37,10 @@ ISTRUZIONI:
 }
 
 function buildEn(input: AlternativesPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? ` Notes: ${ATHLETE_NOTES}.` : ''
+  const notesBlock = input.athleteNotes ? ` Notes: ${input.athleteNotes}.` : ''
   const reasonBlock = input.reason ? ` because ${input.reason}` : ''
   return `
-You are a bodybuilding coach. The user (${ATHLETE_PROFILE})${notesBlock} is looking for alternatives to "${input.exerciseName}"${reasonBlock}.
+You are a bodybuilding coach. The user (${input.athleteProfile})${notesBlock} is looking for alternatives to "${input.exerciseName}"${reasonBlock}.
 
 EXERCISES AVAILABLE IN THE DATABASE:
 ${input.availableExercises}

@@ -6,6 +6,10 @@
  * Prompts live in `lib/workout/prompts/` (one builder per feature).
  * Model dispatch is provider-agnostic via `lib/ai/` (Bedrock | Gemini |
  * OpenAI | Anthropic | off), selected by the `AI_PROVIDER` env var.
+ *
+ * Athlete profile + notes come from `getServerEffectiveSettings()` so the
+ * runtime `/profile` overrides flow into every prompt without each route
+ * needing to know about the settings table.
  */
 
 import type { Exercise, PlanRow, Session, SetEntry } from '../models'
@@ -13,6 +17,7 @@ import type { MuscleGroupSummary } from '../planAnalysis'
 import type { TrainingMode } from '../hypertrophyThresholds'
 import type { Lang } from '../i18n'
 import { generateText, AIDisabledError, AIConfigError } from '../ai'
+import { getServerEffectiveSettings } from '../settings/server'
 import { buildWeeklyAnalysisPrompt } from './prompts/weekly'
 import { buildPlanAnalysisPrompt } from './prompts/plan'
 import { buildChatPrompt } from './prompts/chat'
@@ -66,6 +71,7 @@ async function callModel(prompt: string): Promise<string> {
  */
 export async function analyzeWeeklyProgress(context: WeeklyAnalysisContext): Promise<string> {
     const { planSummary, weekSessions, weekSets, missingExercises, trainingMode = 'mixed', lang = 'it' } = context
+    const settings = await getServerEffectiveSettings()
 
     const volumeSummary = planSummary
         .map(m => `${m.muscle}: ${m.totalSets} set (${m.status})`)
@@ -82,6 +88,8 @@ export async function analyzeWeeklyProgress(context: WeeklyAnalysisContext): Pro
         weekSetsCount: weekSets.length,
         volumeSummary,
         missingSummary,
+        athleteProfile: settings.athleteProfile,
+        athleteNotes: settings.athleteNotes,
     })
 
     return callModel(prompt)
@@ -92,6 +100,7 @@ export async function analyzeWeeklyProgress(context: WeeklyAnalysisContext): Pro
  */
 export async function analyzePlan(context: PlanAnalysisContext): Promise<string> {
     const { planSummary, exercises, plan, trainingMode = 'mixed', lang = 'it' } = context
+    const settings = await getServerEffectiveSettings()
 
     const volumeSummary = planSummary
         .map(m => `${m.muscle}: ${m.totalSets} set (${m.status})`)
@@ -104,7 +113,14 @@ export async function analyzePlan(context: PlanAnalysisContext): Promise<string>
         })
         .join('\n')
 
-    const prompt = buildPlanAnalysisPrompt({ lang, trainingMode, volumeSummary, planStructure })
+    const prompt = buildPlanAnalysisPrompt({
+        lang,
+        trainingMode,
+        volumeSummary,
+        planStructure,
+        athleteProfile: settings.athleteProfile,
+        athleteNotes: settings.athleteNotes,
+    })
     return callModel(prompt)
 }
 
@@ -124,6 +140,7 @@ export async function chatWithCoach(
     },
 ): Promise<string> {
     const { planSummary, exercises, plan, weekSessions, weekSets, trainingMode = 'mixed', lang = 'it' } = context
+    const settings = await getServerEffectiveSettings()
 
     const todayString = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'it-IT', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -178,6 +195,8 @@ export async function chatWithCoach(
         todayString,
         contextBlock: contextLines.join('\n'),
         history,
+        athleteProfile: settings.athleteProfile,
+        athleteNotes: settings.athleteNotes,
     })
 
     return callModel(prompt)
@@ -192,11 +211,14 @@ export async function suggestExerciseAlternatives(
     reason?: string,
     lang: Lang = 'it',
 ): Promise<string> {
+    const settings = await getServerEffectiveSettings()
     const prompt = buildAlternativesPrompt({
         lang,
         exerciseName,
         availableExercises: exercises.map(e => e.name).join(', '),
         reason,
+        athleteProfile: settings.athleteProfile,
+        athleteNotes: settings.athleteNotes,
     })
     return callModel(prompt)
 }

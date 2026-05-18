@@ -193,7 +193,7 @@ function deriveNextWorkout(
 export default function Dashboard() {
   const t = useT()
   const lang = useLang()
-  const { sessions, sets, exercises, plan, loadAll, trainingMode } = useDataStore()
+  const { sessions, sets, exercises, plan, loadAll, trainingMode, storedSettings } = useDataStore()
 
   useEffect(() => { loadAll() }, [loadAll])
 
@@ -282,8 +282,10 @@ export default function Dashboard() {
       targetSets: typeof r.targetSets === 'string' ? parseFloat(r.targetSets) : r.targetSets,
       targetReps: r.targetReps, targetRpe: r.targetRpe,
     }))
-    return analyzePlanCompleteness(planRows, exercises.data || [], trainingMode)
-  }, [exercises, plan, trainingMode])
+    return analyzePlanCompleteness(planRows, exercises.data || [], trainingMode, {
+      recommendedSets: storedSettings.recommendedSets,
+    })
+  }, [exercises, plan, trainingMode, storedSettings.recommendedSets])
 
   const missingExercisesForAI = useMemo(() => {
     if (exercises.status !== 'success' || plan.status !== 'success' ||

@@ -45,7 +45,6 @@ npm install
 ### 2. Deploy the AWS infrastructure
 
 This creates 5 DynamoDB tables, a Cognito User Pool, and a single pre-created owner user. Pick your own `OwnerEmail` — it's the email you'll use to sign in.
-*REMEMBER to export the AWS_PROFILE if you are using the SSO*
 
 ```bash
 sam deploy --guided \
@@ -110,7 +109,7 @@ Then:
 npm run dev
 ```
 
-Open <http://localhost:3000>, sign in with the email + temp password, set a new one.
+Open <http://localhost:3000>, sign in with the email + temp password, set a new one. On a fresh DB the dashboard shows a **"Fresh install"** banner that links to `/setup` — see [First run](#first-run) below.
 
 ### 4b. Deploy to Amplify (production)
 
@@ -151,7 +150,7 @@ Open <http://localhost:3000>, sign in with the email + temp password, set a new 
 
 3. Trigger the build (Amplify auto-detects `amplify.yml`).
 4. **Bind the SSR compute role to the Amplify app** (one-off — see below).
-5. When the build is green and the role is bound, open the Amplify URL, sign in with email + temp password, set the new one.
+5. When the build is green and the role is bound, open the Amplify URL, sign in with email + temp password, set the new one. On the empty stack the dashboard shows a **"Fresh install"** banner that links to `/setup` — see [First run](#first-run) below.
 
 #### Binding the SSR compute role
 
@@ -190,6 +189,31 @@ The authoritative deploy reference is the inline comments inside `template.yaml`
 
 Subsequent infra changes: edit `template.yaml`, then re-run `sam deploy` (no flags needed once `samconfig.toml` exists). For a single-user self-hosted app, running SAM from your laptop is simpler than wiring up OIDC + GitHub Actions for the handful of infra changes you'll ever make.
 
+## First run
+
+After the first login your DynamoDB tables are empty. The home dashboard detects this and shows a **Fresh install** banner pointing to `/setup`.
+
+`/setup` is a two-card, opt-in wizard:
+
+1. **Default exercises** — inserts ~27 base exercises covering every muscle group, picking names in the language active at click time (resolved from the `gt_lang` cookie / `Accept-Language` / `DEFAULT_LANG`). Source: `lib/seedData/exercises.ts`.
+2. **Starter plan** (optional) — inserts a 2-day full-body A/B plan referencing the exercises seeded in step 1. Source: `lib/seedData/plan.ts`. The plan is marked `isActive: true`.
+
+Both steps are skippable and idempotent: the seed endpoints (`POST /api/data/exercises/seed`, `POST /api/data/plans/seed`) refuse to overwrite a table that already has rows. You can build everything by hand from the **Plan** page instead — `/setup` is just a shortcut.
+
+> ℹ️ **Localized at insert time, not at runtime.** Exercise names and day labels are persisted in the locale active when you click the seed buttons. Switching the UI language afterwards does **not** retranslate the existing rows — rename them by hand from the Plan page if you want.
+
+## What you can do in the app
+
+- **Track a session** — `Workout` tab: log set/reps/weight/RPE, see the rest timer, and per-exercise history side-by-side.
+- **Build plans** — `Plan` tab: assign exercises to days, set target sets/reps/RPE, switch between multiple plans, mark one as active.
+- **History** — `History` tab: browse past sessions, drill into a specific workout, edit/delete entries.
+- **Body map + charts** — home page: weekly muscle-group coverage, volume and intensity trends, 2-week activity heatmap.
+- **Exercise detail** — tap an exercise from the plan to see every set ever logged for it.
+- **Deload week** — toggle in the Plan page settings; applies RPE −2 to all current targets.
+- **Training mode** — `intensity` / `volume` / `mixed`; biases the AI coach's suggestions.
+- **AI coach** (only when `AI_PROVIDER` is set): per-session debrief and weekly review based on actual volume vs plan.
+- **Switch language** — top-right switcher; cookie-based, no reload needed for UI strings.
+
 ## AI Providers
 
 `AI_PROVIDER` selects the backend at runtime. All providers share the same prompt/abstraction (`lib/ai/`), so swapping is one env var.
@@ -216,11 +240,21 @@ AI coach prompts are passed a `lang` parameter and respond in the user's languag
 
 ## Customization
 
+### From the app (no code changes)
+
+- **Exercises**: rename, add, delete from the Plan page. Whatever ends up in the `exercises` table is what the app uses — the seed is just a starting kit.
+- **Plans**: create as many as you want, each with its own days/exercises/targets. Only one is `active` at a time (used by the dashboard's "Next workout" card).
+- **Deload toggle** and **training mode**: Plan page settings. They live in the `settings` DDB table.
+
+### In code (advanced — for adopters who fork)
+
 The app defaults are opinionated for an intermediate lifter targeting hypertrophy. The athlete profile fed to the AI coach lives in `lib/workout/prompts/profile.ts` — edit `ATHLETE_PROFILE` to match your sex, weight, training age, and goals so coach replies are tailored to you.
 
-All other adopter-tunable values are marked in the code with `// CUSTOMIZE:` comments — `grep -rn 'CUSTOMIZE:'` to enumerate them. Common ones:
+All other adopter-tunable values are marked with `// CUSTOMIZE:` comments. Run `grep -rn 'CUSTOMIZE:'` to enumerate them; the common ones:
 
 - AI prompts and athlete profile → `lib/workout/prompts/`
+- Default exercises (bilingual seed) → `lib/seedData/exercises.ts`
+- Starter plan (rows + day labels) → `lib/seedData/plan.ts`
 - Volume thresholds by level → `lib/hypertrophyThresholds.ts`
 - Weekly recommended sets → `lib/planAnalysis.ts`
 - Rest-time presets → `lib/restTimerPresets.ts`

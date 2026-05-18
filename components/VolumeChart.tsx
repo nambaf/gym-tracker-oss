@@ -3,6 +3,7 @@
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts'
 import type { WeeklyVolumeData, MuscleVolumeData } from '@/lib/bodyMapUtils'
 import { getVolumeStatus, getVolumeStatusColor, getThresholdsForMode, type TrainingMode } from '@/lib/hypertrophyThresholds'
+import { useDataStore } from '@/store/data'
 import { useT } from '@/lib/i18n/I18nProvider'
 
 interface VolumeChartProps {
@@ -14,6 +15,7 @@ interface VolumeChartProps {
 
 export function VolumeChart({ weeklyData, muscleVolumeData, period, trainingMode = 'mixed' }: VolumeChartProps) {
   const t = useT()
+  const thresholdsByMode = useDataStore(s => s.storedSettings.thresholdsByMode)
 
   if (weeklyData.length === 0) {
     return (
@@ -26,7 +28,7 @@ export function VolumeChart({ weeklyData, muscleVolumeData, period, trainingMode
     )
   }
 
-  const thresholds = getThresholdsForMode(trainingMode)
+  const thresholds = getThresholdsForMode(trainingMode, thresholdsByMode)
   const weeksCount = period === 'week' ? 4 : 12
 
   return (
@@ -78,7 +80,7 @@ export function VolumeChart({ weeklyData, muscleVolumeData, period, trainingMode
           <div className="space-y-2">
             {muscleVolumeData.map(({ muscle, sets }) => {
               const hardSets = Math.round(sets)
-              const status = getVolumeStatus(muscle, hardSets, trainingMode)
+              const status = getVolumeStatus(muscle, hardSets, trainingMode, thresholdsByMode)
               const statusColor = getVolumeStatusColor(status)
               const statusBadge = t.volumeChart.statusBadge[status]
               const threshold = thresholds[muscle]
@@ -108,13 +110,13 @@ export function VolumeChart({ weeklyData, muscleVolumeData, period, trainingMode
             })}
           </div>
 
-          {muscleVolumeData.some(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode) === 'insufficient') && (
+          {muscleVolumeData.some(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode, thresholdsByMode) === 'insufficient') && (
             <div className="mt-4 p-4 bg-paper-sunken rounded-xl border-l-4 border-danger">
               <h5 className="font-semibold text-danger mb-2">{t.volumeChart.warnInsufficientTitle}</h5>
               <p className="text-sm text-ink-soft mb-2">{t.volumeChart.warnInsufficientBody}</p>
               <ul className="text-sm text-ink-soft space-y-1">
                 {muscleVolumeData
-                  .filter(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode) === 'insufficient')
+                  .filter(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode, thresholdsByMode) === 'insufficient')
                   .map(({ muscle, sets }) => {
                     const threshold = thresholds[muscle]
                     const deficit = threshold ? threshold.maintenance - Math.round(sets) : 0
@@ -129,13 +131,13 @@ export function VolumeChart({ weeklyData, muscleVolumeData, period, trainingMode
             </div>
           )}
 
-          {muscleVolumeData.some(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode) === 'maintenance') && (
+          {muscleVolumeData.some(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode, thresholdsByMode) === 'maintenance') && (
             <div className="mt-4 p-4 bg-paper-sunken rounded-xl border-l-4 border-warning">
               <h5 className="font-semibold text-warning mb-2">{t.volumeChart.warnMaintenanceTitle}</h5>
               <p className="text-sm text-ink-soft">{t.volumeChart.warnMaintenanceBody}</p>
               <ul className="text-sm text-ink-soft mt-2 space-y-1">
                 {muscleVolumeData
-                  .filter(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode) === 'maintenance')
+                  .filter(({ muscle, sets }) => getVolumeStatus(muscle, Math.round(sets), trainingMode, thresholdsByMode) === 'maintenance')
                   .map(({ muscle }) => (
                     <li key={muscle}>{t.muscles[muscle] || muscle}</li>
                   ))}

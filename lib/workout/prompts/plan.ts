@@ -1,7 +1,6 @@
 import type { TrainingMode } from '../../hypertrophyThresholds'
 import type { Lang } from '../../i18n'
-import { ATHLETE_PROFILE, ATHLETE_NOTES } from './profile'
-import { TRAINING_MODE_DESC, THRESHOLDS_BY_MODE } from './training-modes'
+import { TRAINING_MODE_DESC } from './training-modes'
 
 export interface PlanPromptInput {
   lang: Lang
@@ -10,6 +9,8 @@ export interface PlanPromptInput {
   volumeSummary: string
   /** Plan rows, e.g. "Monday: Squat - 4x8 @RPE8". */
   planStructure: string
+  athleteProfile: string
+  athleteNotes: string
 }
 
 /**
@@ -21,11 +22,11 @@ export function buildPlanAnalysisPrompt(input: PlanPromptInput): string {
 }
 
 function buildIt(input: PlanPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? `\nNOTE UTENTE: ${ATHLETE_NOTES}` : ''
+  const notesBlock = input.athleteNotes ? `\nNOTE UTENTE: ${input.athleteNotes}` : ''
   return `
 Sei un coach di bodybuilding esperto in programmazione per ipertrofia. Analizza questo piano di allenamento.
 
-PROFILO ATLETA: ${ATHLETE_PROFILE}${notesBlock}
+PROFILO ATLETA: ${input.athleteProfile}${notesBlock}
 APPROCCIO: ${TRAINING_MODE_DESC.it[input.trainingMode]}
 
 VOLUME SETTIMANALE PER GRUPPO MUSCOLARE:
@@ -33,9 +34,6 @@ ${input.volumeSummary}
 
 STRUTTURA DEL PIANO:
 ${input.planStructure}
-
-SOGLIE DI RIFERIMENTO (hard set settimanali per modalità ${input.trainingMode}):
-${THRESHOLDS_BY_MODE.it[input.trainingMode]}
 
 REGOLA IMPORTANTE: Max ~10 set per muscolo per sessione (Remer et al.). Se un muscolo ha più di 10 set in un giorno, suggerire di dividere su più sessioni.
 
@@ -50,11 +48,11 @@ ISTRUZIONI:
 }
 
 function buildEn(input: PlanPromptInput): string {
-  const notesBlock = ATHLETE_NOTES ? `\nUSER NOTES: ${ATHLETE_NOTES}` : ''
+  const notesBlock = input.athleteNotes ? `\nUSER NOTES: ${input.athleteNotes}` : ''
   return `
 You are a bodybuilding coach experienced in hypertrophy programming. Analyze this training plan.
 
-ATHLETE PROFILE: ${ATHLETE_PROFILE}${notesBlock}
+ATHLETE PROFILE: ${input.athleteProfile}${notesBlock}
 APPROACH: ${TRAINING_MODE_DESC.en[input.trainingMode]}
 
 WEEKLY VOLUME PER MUSCLE GROUP:
@@ -62,9 +60,6 @@ ${input.volumeSummary}
 
 PLAN STRUCTURE:
 ${input.planStructure}
-
-REFERENCE THRESHOLDS (weekly hard sets, ${input.trainingMode} mode):
-${THRESHOLDS_BY_MODE.en[input.trainingMode]}
 
 IMPORTANT RULE: Max ~10 sets per muscle per session (Remer et al.). If any muscle has more than 10 sets in a day, suggest splitting across sessions.
 

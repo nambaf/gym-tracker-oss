@@ -92,6 +92,7 @@ export default function WorkoutPage() {
     loadSessions, loadSets, loadExercises, loadSettings,
     addSessionOptimistic, addSetOptimistic, removeSetOptimistic,
     updateSessionOptimistic, deloadActive,
+    storedSettings,
   } = useDataStore()
 
   useWakeLock(true)
@@ -484,7 +485,13 @@ export default function WorkoutPage() {
 
           {(() => {
             const exData = exercises.find((e: any) => e.id === activeEx.id) as { primaryMuscles?: any } | undefined
-            const restPreset = getRestPresetForExercise(exData?.primaryMuscles)
+            const restPreset = getRestPresetForExercise(exData?.primaryMuscles, {
+              compoundMuscles: storedSettings.compoundMuscles,
+              isolationMuscles: storedSettings.isolationMuscles,
+              restCompoundSec: storedSettings.restCompoundSec,
+              restStandardSec: storedSettings.restStandardSec,
+              restIsolationSec: storedSettings.restIsolationSec,
+            })
             const mins = Math.floor(restPreset.defaultSec / 60)
             const secs = (restPreset.defaultSec % 60).toString().padStart(2, '0')
             const presetLabel = `${t.restTimer.presets[restPreset.labelKey]} (${mins}:${secs})`

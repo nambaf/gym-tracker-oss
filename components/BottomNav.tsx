@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Dumbbell, History, ClipboardList } from 'lucide-react'
+import { Home, Dumbbell, History, ClipboardList, User } from 'lucide-react'
 import { useT } from '@/lib/i18n/I18nProvider'
 
 // Paths where the bottom navigation is hidden — typically anything reachable
@@ -23,6 +23,7 @@ export function BottomNav() {
     { href: '/workout' as const, label: t.nav.workout, icon: Dumbbell },
     { href: '/history' as const, label: t.nav.history, icon: History },
     { href: '/plan' as const, label: t.nav.plan, icon: ClipboardList },
+    { href: '/profile' as const, label: t.nav.profile, icon: User },
   ]
 
   return (

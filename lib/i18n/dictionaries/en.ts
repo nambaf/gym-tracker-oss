@@ -6,6 +6,7 @@ export const en: Dictionary = {
     workout: 'Workout',
     history: 'History',
     plan: 'Plan',
+    profile: 'Profile',
   },
   login: {
     eyebrow: 'Gym Tracker',
@@ -422,7 +423,7 @@ export const en: Dictionary = {
   },
   setup: {
     title: 'Initial setup',
-    subtitle: 'Two optional steps to get you started. You can skip them and configure everything by hand from the Plan screen.',
+    subtitle: 'Three optional steps to get you started. You can skip them and configure everything by hand from the Plan screen.',
     skip: 'Skip and go to the dashboard',
     allDone: 'Setup complete.',
     allDoneCta: 'Go to dashboard',
@@ -442,6 +443,90 @@ export const en: Dictionary = {
       btnRunning: 'Creating…',
       blockedNoExercises: 'Load the exercises first.',
       errorGeneric: 'Failed to create the starter plan.',
+    },
+    settings: {
+      title: '3 · Profile settings (optional)',
+      body: 'Creates the settings record. Every value stays on defaults until you edit it from the Profile page.',
+      btn: 'Initialize',
+      btnRunning: 'Initializing…',
+      alreadyInit: 'Already initialized.',
+      errorGeneric: 'Failed to initialize settings.',
+    },
+  },
+  profile: {
+    title: 'Profile & settings',
+    subtitle: 'Athlete profile, training approach, and advanced thresholds. Unset values fall back to code defaults.',
+    save: 'Save',
+    saving: 'Saving…',
+    saved: 'Saved',
+    errorGeneric: 'Failed to save.',
+    sectionBasic: 'Basic',
+    sectionAdvanced: 'Advanced',
+    sectionMatrices: 'Advanced — matrices',
+    comingSoon: 'Coming soon.',
+    resetSection: 'Reset to defaults',
+    resetConfirm: 'Reset this section to defaults?',
+    basic: {
+      athleteProfile: {
+        label: 'Athlete profile',
+        placeholder: 'e.g. intermediate, 80kg, hypertrophy goal',
+        helper: 'Free-form line passed as context to every AI coach prompt.',
+      },
+      athleteNotes: {
+        label: 'Extra notes',
+        placeholder: 'e.g. no squats (knee injury)',
+        helper: 'Anything the coach should always keep in mind.',
+      },
+      trainingMode: {
+        label: 'Training approach',
+      },
+      deload: {
+        label: 'Deload mode',
+        helper: 'Reduces suggested volume for the recovery phase.',
+      },
+    },
+    advanced: {
+      maxSetsPerSession: {
+        label: 'Max sets per muscle per session',
+        helper: 'Above this threshold extra volume gives diminishing returns (junk volume). Suggested range: 4–20.',
+      },
+      restCompound: {
+        label: 'Rest — compound',
+        helper: 'Rest time for heavy multi-joint lifts (squat, bench, deadlift).',
+      },
+      restStandard: {
+        label: 'Rest — standard',
+        helper: 'Rest time for mixed or heavy single-joint moves.',
+      },
+      restIsolation: {
+        label: 'Rest — isolation',
+        helper: 'Rest time for isolation exercises (curls, raises, pushdowns).',
+      },
+      restSecondsSuffix: 'sec',
+      compoundMuscles: {
+        label: 'Compound muscles',
+        placeholder: 'quadricipiti, glutei, dorsali, petto…',
+        helper: 'Comma-separated list. Lowercase. Drives the rest preset classifier.',
+      },
+      isolationMuscles: {
+        label: 'Isolation muscles',
+        placeholder: 'bicipiti, tricipiti, polpacci…',
+        helper: 'Comma-separated list. Lowercase. Drives the rest preset classifier.',
+      },
+    },
+    matrices: {
+      thresholds: {
+        title: 'Hypertrophy thresholds (weekly hard sets)',
+        helper: 'Per muscle: minimum to maintain mass vs threshold for active hypertrophy.',
+        fieldA: 'Maint.',
+        fieldB: 'Hyper.',
+      },
+      recommendedSets: {
+        title: 'Recommended sets (plan completeness)',
+        helper: 'Per muscle: minimum to be covered by the plan vs optimal.',
+        fieldA: 'Min.',
+        fieldB: 'Opt.',
+      },
     },
   },
 }

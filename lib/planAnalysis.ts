@@ -6,7 +6,11 @@ import {
   normalizeMuscle,
   parsePrimaryMuscles,
 } from './bodyMapUtils'
-import { type TrainingMode, MAX_SETS_PER_SESSION_PER_MUSCLE } from './hypertrophyThresholds'
+import type { TrainingMode, RecommendedSetsMatrix } from './settings/types'
+import {
+  DEFAULT_RECOMMENDED_SETS,
+  DEFAULT_MAX_SETS_PER_SESSION_PER_MUSCLE,
+} from './settings/defaults'
 
 export interface MuscleGroupSummary {
     muscle: MuscleGroup
@@ -15,67 +19,21 @@ export interface MuscleGroupSummary {
     status: 'complete' | 'minimal' | 'insufficient'
 }
 
-/**
- * Recommended weekly sets per muscle group, used for the "plan completeness"
- * view (setup-time check, before any training happens).
- *
- * Distinct from `THRESHOLDS_BY_MODE` in `hypertrophyThresholds.ts`:
- *  - here: minimal/optimal (UX "does the plan cover the muscles?")
- *  - there: maintenance/hypertrophy (runtime "are you doing enough?")
- *
- * CUSTOMIZE: values tuned for intermediate lifters.
- */
-const RECOMMENDED_SETS: Record<TrainingMode, Record<MuscleGroup, { minimal: number; optimal: number }>> = {
-    intensity: {
-        petto: { minimal: 5, optimal: 10 },
-        dorsali: { minimal: 5, optimal: 10 },
-        spalle: { minimal: 5, optimal: 10 },
-        bicipiti: { minimal: 4, optimal: 8 },
-        tricipiti: { minimal: 4, optimal: 8 },
-        quadricipiti: { minimal: 5, optimal: 10 },
-        femorali: { minimal: 5, optimal: 10 },
-        glutei: { minimal: 5, optimal: 10 },
-        polpacci: { minimal: 4, optimal: 8 },
-        core: { minimal: 4, optimal: 8 },
-        trapezi: { minimal: 3, optimal: 6 },
-        avambracci: { minimal: 3, optimal: 6 },
-        adduttori: { minimal: 2, optimal: 4 },
-    },
-    volume: {
-        petto: { minimal: 10, optimal: 16 },
-        dorsali: { minimal: 12, optimal: 18 },
-        spalle: { minimal: 10, optimal: 16 },
-        bicipiti: { minimal: 8, optimal: 14 },
-        tricipiti: { minimal: 8, optimal: 14 },
-        quadricipiti: { minimal: 12, optimal: 18 },
-        femorali: { minimal: 10, optimal: 16 },
-        glutei: { minimal: 10, optimal: 16 },
-        polpacci: { minimal: 8, optimal: 12 },
-        core: { minimal: 8, optimal: 12 },
-        trapezi: { minimal: 6, optimal: 10 },
-        avambracci: { minimal: 6, optimal: 8 },
-        adduttori: { minimal: 4, optimal: 8 },
-    },
-    // Mixed: intensity for upper body, volume for lower body
-    mixed: {
-        petto: { minimal: 5, optimal: 10 },
-        dorsali: { minimal: 5, optimal: 10 },
-        spalle: { minimal: 5, optimal: 10 },
-        bicipiti: { minimal: 4, optimal: 8 },
-        tricipiti: { minimal: 4, optimal: 8 },
-        quadricipiti: { minimal: 12, optimal: 18 },
-        femorali: { minimal: 10, optimal: 16 },
-        glutei: { minimal: 10, optimal: 16 },
-        polpacci: { minimal: 8, optimal: 12 },
-        core: { minimal: 8, optimal: 12 },
-        trapezi: { minimal: 3, optimal: 6 },
-        avambracci: { minimal: 3, optimal: 6 },
-        adduttori: { minimal: 4, optimal: 8 },
-    },
+export interface PlanCompletenessOverrides {
+    recommendedSets?: RecommendedSetsMatrix
 }
 
-function getMuscleGroupStatus(sets: number, muscle: MuscleGroup, mode: TrainingMode = 'mixed'): 'complete' | 'minimal' | 'insufficient' {
-    const thresholds = RECOMMENDED_SETS[mode][muscle]
+export interface SessionVolumeOverrides {
+    maxSetsPerSessionPerMuscle?: number
+}
+
+function getMuscleGroupStatus(
+    sets: number,
+    muscle: MuscleGroup,
+    mode: TrainingMode,
+    recommendedSets: RecommendedSetsMatrix,
+): 'complete' | 'minimal' | 'insufficient' {
+    const thresholds = recommendedSets[mode][muscle]
 
     if (sets >= thresholds.optimal) {
         return 'complete'
@@ -93,8 +51,10 @@ function getMuscleGroupStatus(sets: number, muscle: MuscleGroup, mode: TrainingM
 export function analyzePlanCompleteness(
     plan: PlanRow[],
     exercises: Exercise[],
-    mode: TrainingMode = 'mixed'
+    mode: TrainingMode = 'mixed',
+    overrides?: PlanCompletenessOverrides,
 ): MuscleGroupSummary[] {
+    const recommendedSets = overrides?.recommendedSets ?? DEFAULT_RECOMMENDED_SETS
     const muscleMap = new Map<MuscleGroup, {
         totalSets: number
         exercises: Map<string, { name: string; sets: number }>
@@ -145,7 +105,7 @@ export function analyzePlanCompleteness(
                 name: ex.name,
                 sets: Math.round(ex.sets * 10) / 10
             })),
-            status: getMuscleGroupStatus(data.totalSets, muscle, mode)
+            status: getMuscleGroupStatus(data.totalSets, muscle, mode, recommendedSets)
         }))
         .sort((a, b) => b.totalSets - a.totalSets)
 }
@@ -165,8 +125,10 @@ export interface SessionVolumeWarning {
 
 export function analyzeSessionVolume(
     plan: PlanRow[],
-    exercises: Exercise[]
+    exercises: Exercise[],
+    overrides?: SessionVolumeOverrides,
 ): SessionVolumeWarning[] {
+    const limit = overrides?.maxSetsPerSessionPerMuscle ?? DEFAULT_MAX_SETS_PER_SESSION_PER_MUSCLE
     const warnings: SessionVolumeWarning[] = []
     const days = Array.from(new Set(plan.map(r => r.day))).filter(Boolean)
 
@@ -208,13 +170,13 @@ export function analyzeSessionVolume(
         }
 
         for (const [muscle, data] of muscleInSession) {
-            if (data.sets > MAX_SETS_PER_SESSION_PER_MUSCLE) {
+            if (data.sets > limit) {
                 warnings.push({
                     day,
                     muscle,
                     muscleName: MUSCLE_LABELS[muscle] || muscle,
                     sets: Math.round(data.sets * 10) / 10,
-                    limit: MAX_SETS_PER_SESSION_PER_MUSCLE,
+                    limit,
                     exercises: Array.from(data.exercises.values()).map(ex => ({
                         name: ex.name,
                         sets: Math.round(ex.sets * 10) / 10
