@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { readTable, appendRow } from '@/lib/data/dataStore'
 import { invalidate } from '@/lib/data/dataCache'
 import type { Plan } from '@/lib/models'
+import { requireAuth } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,6 +11,8 @@ export const dynamic = 'force-dynamic'
 // Set isActive=true on the requested plan and false on all the others.
 // Two sequential writes — acceptable for single-user, no transactions needed.
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const { id } = await params
     const plans = await readTable<Plan>('plans')

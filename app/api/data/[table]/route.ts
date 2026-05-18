@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { appendRow, readTable } from '@/lib/data/dataStore'
 import { getCache, setCache, invalidate } from '@/lib/data/dataCache'
+import { requireAuth } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const revalidate = 0
@@ -17,6 +18,8 @@ const ALLOWED_TABLES = new Set([
 type Ctx = { params: Promise<{ table: string }> }
 
 export async function GET(req: Request, { params }: Ctx) {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const { table } = await params
     if (!ALLOWED_TABLES.has(table)) {
@@ -41,6 +44,8 @@ export async function GET(req: Request, { params }: Ctx) {
 }
 
 export async function POST(req: Request, { params }: Ctx) {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const { table } = await params
     if (!ALLOWED_TABLES.has(table)) {

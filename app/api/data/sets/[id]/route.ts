@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { deleteRow, updateRow } from '@/lib/data/dataStore'
+import { requireAuth } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const revalidate = 0
@@ -8,6 +9,8 @@ export const dynamic = 'force-dynamic'
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function PUT(req: Request, { params }: Ctx) {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const { id } = await params
     if (!id) {
@@ -27,6 +30,8 @@ export async function PUT(req: Request, { params }: Ctx) {
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const { id } = await params
     if (!id) {

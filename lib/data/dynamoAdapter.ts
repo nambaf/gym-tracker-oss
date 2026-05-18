@@ -1,6 +1,6 @@
 import 'server-only'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, ScanCommand, PutCommand, BatchWriteCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, PutCommand, BatchWriteCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import type { DataStore } from './dataStore'
 
 /**
@@ -102,19 +102,37 @@ async function deleteRow(table: string, id: string) {
   invalidate(table)
 }
 
-async function deleteRowsWhere(table: string, condition: (row: any) => boolean) {
-  const name = tableName(table)
-  const res = await client.send(new ScanCommand({ TableName: name }))
-  const toDelete = (res.Items ?? []).filter(condition)
+async function deleteSetsForSession(sessionId: string) {
+  const name = tableName('sets')
+  const ids: string[] = []
+  let exclusiveStartKey: Record<string, any> | undefined
 
-  for (let i = 0; i < toDelete.length; i += 25) {
-    const batch = toDelete.slice(i, i + 25).map(item => ({ DeleteRequest: { Key: keyOf(item) } }))
+  // Use the `sessionId-index` GSI defined in template.yaml (SetsTable) so we
+  // touch only the rows belonging to this session instead of scanning the
+  // whole table. Paginate in case a single session ever exceeds 1 MB of sets.
+  do {
+    const res = await client.send(new QueryCommand({
+      TableName: name,
+      IndexName: 'sessionId-index',
+      KeyConditionExpression: 'sessionId = :sid',
+      ExpressionAttributeValues: { ':sid': sessionId },
+      ProjectionExpression: 'id',
+      ExclusiveStartKey: exclusiveStartKey,
+    }))
+    for (const item of res.Items ?? []) {
+      if (item.id) ids.push(item.id)
+    }
+    exclusiveStartKey = res.LastEvaluatedKey
+  } while (exclusiveStartKey)
+
+  for (let i = 0; i < ids.length; i += 25) {
+    const batch = ids.slice(i, i + 25).map(id => ({ DeleteRequest: { Key: { id } } }))
     if (batch.length) await client.send(new BatchWriteCommand({ RequestItems: { [name]: batch } }))
   }
 
-  if (toDelete.length > 0) {
+  if (ids.length > 0) {
     const { invalidate } = await import('./dataCache')
-    invalidate(table)
+    invalidate('sets')
   }
 }
 
@@ -123,7 +141,7 @@ const dynamoAdapter: DataStore = {
   appendRow,
   updateRow,
   deleteRow,
-  deleteRowsWhere,
+  deleteSetsForSession,
   getRow,
 }
 

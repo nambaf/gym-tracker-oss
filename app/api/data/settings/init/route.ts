@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getRow, appendRow } from '@/lib/data/dataStore'
+import { requireAuth } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const revalidate = 0
@@ -17,6 +18,8 @@ export const dynamic = 'force-dynamic'
  * is the explicit, no-arg path used by the `/setup` wizard.
  */
 export async function POST() {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const existing = await getRow('settings', 'global')
     if (existing) {

@@ -3,6 +3,7 @@ import { readTable, appendRow } from '@/lib/data/dataStore'
 import { invalidate } from '@/lib/data/dataCache'
 import { SEED_EXERCISES } from '@/lib/seedData/exercises'
 import { getLang } from '@/lib/i18n/getLang'
+import { requireAuth } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -13,6 +14,8 @@ export const dynamic = 'force-dynamic'
 // Refuses to run when the table is already populated — adopters customise
 // their own list via the UI after first launch.
 export async function POST() {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const existing = await readTable('exercises')
     if (existing.length > 0) {

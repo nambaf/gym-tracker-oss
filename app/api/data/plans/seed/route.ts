@@ -5,6 +5,7 @@ import { STARTER_PLAN_FULL_BODY_2D } from '@/lib/seedData/plan'
 import { SEED_EXERCISES } from '@/lib/seedData/exercises'
 import { getLang } from '@/lib/i18n/getLang'
 import type { Exercise, Plan, PlanRow } from '@/lib/models'
+import { requireAuth } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,6 +17,8 @@ export const dynamic = 'force-dynamic'
 //   - `exercises` is empty (seed exercises first)
 //   - any starter-plan exercise can't be matched (locale mismatch / partial seed)
 export async function POST() {
+  const unauthorized = await requireAuth()
+  if (unauthorized) return unauthorized
   try {
     const existingPlans = await readTable<Plan>('plans')
     if (existingPlans.length > 0) {

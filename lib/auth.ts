@@ -12,6 +12,8 @@
  */
 
 import { CognitoJwtVerifier } from 'aws-jwt-verify'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
 export const AUTH_COOKIE = 'gt_id_token'
 // 5 hours — long enough to cover a full workout including warm-up,
@@ -53,4 +55,10 @@ export async function verifyAuthToken(token: string | undefined): Promise<boolea
 
 export function getCognitoConfig() {
   return readConfig()
+}
+
+export async function requireAuth(): Promise<NextResponse | null> {
+  const token = (await cookies()).get(AUTH_COOKIE)?.value
+  if (await verifyAuthToken(token)) return null
+  return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 }

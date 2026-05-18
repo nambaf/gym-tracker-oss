@@ -40,11 +40,10 @@ export async function proxy(req: NextRequest) {
   return NextResponse.redirect(loginUrl)
 }
 
-// The matcher decides whether the proxy runs at all. Anything matched by the
-// negative lookahead bypasses it entirely (static assets, Next internals).
-// `app/icon.svg` is served at `/icon.svg` and is covered by the `.svg` rule.
+// The matcher decides whether the proxy runs at all.
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|map|js|css|json|xml|txt)$).*)',
+    '/api/:path*',
+    '/((?!api/|_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|map|js|css|json|xml|txt)$).*)',
   ],
 }
