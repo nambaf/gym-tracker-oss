@@ -75,7 +75,7 @@ sam deploy --guided \
 
 The deploy takes a few minutes — Cognito is the slowest resource. When it finishes, the **`EnvironmentVariables`** output block contains the values you'll need next — copy them somewhere handy.
 
-> ⚠️ **Keep `AppName` consistent.** Whatever you choose here (`gym-tracker`, `gym-tracker-oss`, …) must match exactly the `APP_NAME` you set in Amplify env vars (step 4b). `amplify.yml` derives the DynamoDB table names from it — a mismatch means the app can't find its data.
+> ⚠️ **`AppName` is the single most error-prone parameter.** Type it once, exactly the same, **everywhere**: in `--parameter-overrides`, in the `--guided` prompt confirmation, and later in Amplify env vars (`APP_NAME`, step 4b). A typo of one character (`gym-tracker-os` vs `gym-tracker-oss`) makes the stack and the app silently disagree — the deploy succeeds, but at runtime the app looks up tables that don't exist and you get HTTP 500 on `/api/data/*` with no obvious cause. Recommended: stick with the default `gym-tracker`. If you change it, change it everywhere.
 
 ### 3. Set the Cognito owner's temporary password
 
@@ -166,7 +166,17 @@ aws amplify update-app \
 
 `<APP_ID>` is the 12-ish-char string in the Amplify console URL (e.g. `d136lpmaniqigy`), also visible under **App settings → General**.
 
+> ⚠️ **Do NOT pick the ARN from the Amplify console.** The console shows a `AmplifySSRLoggingRole-<uuid>` under App settings → IAM roles → *Service role*. That is a different role used by Amplify itself for logging — it has **no** DynamoDB permissions. Binding it as compute role makes login succeed but `/api/data/*` return 500. The only correct ARN is the `AmplifyComputeRoleArn` printed in your `sam deploy` outputs.
+
 After the call, **redeploy the app from the Amplify console** ("Redeploy this version") — the compute role is only picked up on the next deploy.
+
+Sanity check (run *after* the redeploy finishes):
+
+```bash
+aws amplify get-app --app-id <APP_ID> --query "app.computeRoleArn" --output text --region <your region>
+```
+
+This must echo the same ARN you just bound (ending in `<AppName>-amplify-compute-<Environment>`). If it echoes anything starting with `AmplifySSRLoggingRole-`, the bind was on the wrong role — re-run the `update-app` command with the SAM output ARN.
 
 When you add a new DynamoDB table later, the managed policy auto-updates at the next `sam deploy` and the role inherits it — no re-bind required.
 
