@@ -38,12 +38,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      # `enablement: true` flips Pages on for the repo with "GitHub Actions" as
-      # source, so no manual click in Settings → Pages is needed for first deploy.
-      # Requires `pages: write` (already granted above).
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
