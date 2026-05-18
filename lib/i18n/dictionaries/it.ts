@@ -389,6 +389,36 @@ export type Dictionary = {
       reviewBtn: string
       startBtn: string
     }
+    freshInstall: {
+      eyebrow: string
+      title: string
+      body: string
+      cta: string
+    }
+  }
+  setup: {
+    title: string
+    subtitle: string
+    skip: string
+    allDone: string
+    allDoneCta: string
+    statusPending: string
+    statusDone: string
+    exercises: {
+      title: string
+      body: string
+      btn: string
+      btnRunning: string
+      errorGeneric: string
+    }
+    plan: {
+      title: string
+      body: string
+      btn: string
+      btnRunning: string
+      blockedNoExercises: string
+      errorGeneric: string
+    }
   }
 }
 
@@ -804,6 +834,36 @@ export const it: Dictionary = {
       minutesSuffix: 'min',
       reviewBtn: 'Rivedi',
       startBtn: 'Inizia',
+    },
+    freshInstall: {
+      eyebrow: 'Installazione nuova',
+      title: 'Configura il tuo gym tracker',
+      body: 'La tua scheda è vuota. Carica gli esercizi di default e un piano di partenza in pochi click.',
+      cta: 'Avvia il setup',
+    },
+  },
+  setup: {
+    title: 'Setup iniziale',
+    subtitle: 'Due passaggi opzionali per partire subito. Puoi saltarli e configurare tutto a mano dal Piano.',
+    skip: 'Salta e vai alla dashboard',
+    allDone: 'Setup completato.',
+    allDoneCta: 'Vai alla dashboard',
+    statusPending: 'Da fare',
+    statusDone: 'Fatto',
+    exercises: {
+      title: '1 · Esercizi di default',
+      body: 'Carica una lista di ~27 esercizi base che coprono tutti i gruppi muscolari. Potrai rinominarli o cancellarli dalla schermata Piano.',
+      btn: 'Carica gli esercizi',
+      btnRunning: 'Caricamento…',
+      errorGeneric: 'Errore nel caricamento degli esercizi.',
+    },
+    plan: {
+      title: '2 · Piano starter (opzionale)',
+      body: 'Inserisce un piano full-body 2 giorni (A/B) con i fondamentali. Modificalo a piacere dopo dal Piano.',
+      btn: 'Crea il piano starter',
+      btnRunning: 'Creazione…',
+      blockedNoExercises: 'Carica prima gli esercizi.',
+      errorGeneric: 'Errore nella creazione del piano.',
     },
   },
 }

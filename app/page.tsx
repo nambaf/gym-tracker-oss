@@ -299,6 +299,10 @@ export default function Dashboard() {
     }))
   }, [exercises, plan, sets, sessions, muscleData])
 
+  const showFreshInstallBanner =
+    exercises.status === 'success' && plan.status === 'success' &&
+    (exercises.data || []).length === 0 && (plan.data || []).length === 0
+
   return (
     <div className="space-y-7">
       <header className="flex items-end justify-between">
@@ -317,6 +321,19 @@ export default function Dashboard() {
         </div>
         <ProgressAvatar percent={weeklyProgress} />
       </header>
+
+      {showFreshInstallBanner && (
+        <Link href="/setup" className="block group">
+          <section className="card p-4 border border-accent-500/30 bg-accent-500/5">
+            <div className="eyebrow text-accent-500">{t.home.freshInstall.eyebrow}</div>
+            <h3 className="text-sm font-semibold mt-1">{t.home.freshInstall.title}</h3>
+            <p className="text-xs text-muted mt-1 mb-3">{t.home.freshInstall.body}</p>
+            <div className="inline-flex items-center gap-1.5 text-accent-500 text-sm font-medium">
+              {t.home.freshInstall.cta} <ArrowRight size={14} strokeWidth={2.2} />
+            </div>
+          </section>
+        </Link>
+      )}
 
       <NextWorkoutCard workout={nextWorkout} />
 
