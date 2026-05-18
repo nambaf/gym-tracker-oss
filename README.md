@@ -238,39 +238,6 @@ UI strings live in `lib/i18n/dictionaries/{it,en}.ts`. The active language is re
 
 AI coach prompts are passed a `lang` parameter and respond in the user's language.
 
-## Customization
-
-### From the app (no code changes)
-
-- **Exercises**: rename, add, delete from the Plan page. Whatever ends up in the `exercises` table is what the app uses — the seed is just a starting kit.
-- **Plans**: create as many as you want, each with its own days/exercises/targets. Only one is `active` at a time (used by the dashboard's "Next workout" card).
-- **Deload toggle** and **training mode**: Plan page settings. They live in the `settings` DDB table.
-
-### In code (advanced — for adopters who fork)
-
-The app defaults are opinionated for an intermediate lifter targeting hypertrophy. The athlete profile fed to the AI coach lives in `lib/workout/prompts/profile.ts` — edit `ATHLETE_PROFILE` to match your sex, weight, training age, and goals so coach replies are tailored to you.
-
-All other adopter-tunable values are marked with `// CUSTOMIZE:` comments. Run `grep -rn 'CUSTOMIZE:'` to enumerate them; the common ones:
-
-- AI prompts and athlete profile → `lib/workout/prompts/`
-- Default exercises (bilingual seed) → `lib/seedData/exercises.ts`
-- Starter plan (rows + day labels) → `lib/seedData/plan.ts`
-- Volume thresholds by level → `lib/hypertrophyThresholds.ts`
-- Weekly recommended sets → `lib/planAnalysis.ts`
-- Rest-time presets → `lib/restTimerPresets.ts`
-- UI strings → `lib/i18n/dictionaries/`
-
-## Architecture
-
-```
-Browser ──> Amplify Hosting (Next.js 16)
-              ├─> Cognito User Pool (auth, 1 owner email)
-              ├─> DynamoDB (5 tables, direct IAM)
-              └─> AI Provider (config-driven: bedrock | gemini | openai | anthropic | off)
-```
-
-See `CLAUDE.md` for a contributor-oriented map of the codebase.
-
 ## Contributing
 
 Pull requests welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
