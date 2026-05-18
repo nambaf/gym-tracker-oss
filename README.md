@@ -226,7 +226,15 @@ Both steps are skippable and idempotent: the seed endpoints (`POST /api/data/exe
 | `anthropic` | Pay-per-token | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` |
 | `off` | Free | _(coach disabled)_ |
 
-Bedrock note: Claude is not available in `eu-south-1`. Use `us-east-1`, `eu-central-1`, or `us-west-2` for `BEDROCK_REGION`.
+### Bedrock setup
+
+Bedrock auths via the SSR runtime's IAM role — no API key in env. Three caveats:
+
+1. **Region** — Set `BEDROCK_REGION` to `us-east-1`, `eu-central-1`, or `us-west-2` or other region where the model is located, check the AWS page. The Bedrock region may differ from `APP_AWS_REGION` (where DynamoDB + Cognito live).
+2. **IAM permission** — the SAM template (`AppRuntimePolicy`) already includes `bedrock:InvokeModel` on `arn:aws:bedrock:*::foundation-model/*`. If you forked before this was added, edit your `template.yaml` and run `sam deploy` to apply. Adopters using a non-Bedrock provider can drop the statement without impact.
+3. **Model access** — AWS requires manual model-access activation. Open Bedrock console in your `BEDROCK_REGION` → **Model access** → request access to the model in `BEDROCK_MODEL_ID`. Usually instantaneous for Anthropic models, but not automatable via CloudFormation.
+
+After enabling the model + setting `AI_PROVIDER=bedrock` in Amplify env vars, redeploy with `aws amplify start-job --app-id <id> --branch-name main --job-type RELEASE`.
 
 ## Localization
 

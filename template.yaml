@@ -176,6 +176,14 @@ Resources:
               - !GetAtt SetsTable.Arn
               - !GetAtt PlansTable.Arn
               - !GetAtt SettingsTable.Arn
+          # InvokeModel for AI_PROVIDER=bedrock. Harmless when AI_PROVIDER != bedrock
+          # (the code path is never exercised). Adopters who use a non-Bedrock
+          # provider can drop this statement without functional impact.
+          - Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+            Resource:
+              - 'arn:aws:bedrock:*::foundation-model/*'
 
   # Role assumed by the Amplify Hosting SSR compute (the Next.js Lambda that
   # Amplify provisions internally — not visible via `aws lambda list-functions`).
