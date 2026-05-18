@@ -2,7 +2,9 @@
 
 > Mobile-first gym workout tracker, self-hosted on AWS. Integrated AI coach. Italian/English UI.
 
-![Next.js 16](https://img.shields.io/badge/Next.js-16-black) ![AWS Cognito](https://img.shields.io/badge/Auth-Cognito-orange) ![AWS DynamoDB](https://img.shields.io/badge/DB-DynamoDB-blue) ![Amplify Hosting](https://img.shields.io/badge/Deploy-Amplify-yellow) ![License MIT](https://img.shields.io/badge/License-MIT-green)
+**🌐 Live overview & screenshots → [nambaf.github.io/gym-tracker-oss](https://nambaf.github.io/gym-tracker-oss/)**
+
+[![Website](https://img.shields.io/badge/Website-live-d6492a)](https://nambaf.github.io/gym-tracker-oss/) ![Next.js 16](https://img.shields.io/badge/Next.js-16-black) ![AWS Cognito](https://img.shields.io/badge/Auth-Cognito-orange) ![AWS DynamoDB](https://img.shields.io/badge/DB-DynamoDB-blue) ![Amplify Hosting](https://img.shields.io/badge/Deploy-Amplify-yellow) ![License MIT](https://img.shields.io/badge/License-MIT-green)
 
 ## What Is It
 
