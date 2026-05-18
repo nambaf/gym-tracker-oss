@@ -19,57 +19,166 @@ An app for tracking strength and hypertrophy workouts with personalized plans, s
 
 ## Quick Start
 
+### Prerequisites
+
+Install once on your machine:
+
+- An AWS account, and an IAM user/role that can create CloudFormation stacks, DynamoDB tables, and Cognito User Pools.
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), authenticated via `aws configure`. If you already have AWS SSO / IAM Identity Center configured, refresh and export the profile for this shell instead:
+  ```bash
+  aws sso login --profile <your-profile>
+  export AWS_PROFILE=<your-profile>
+  ```
+- [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
+- Node.js — the version pinned in `.nvmrc`.
+
+You do **not** need to create or fill in any `.env` file before deploying. SAM takes its parameters from the command line; the `.env` file is only used later for local development.
+
+### 1. Clone the repo
+
 ```bash
-# 1. Fork + clone
 git clone https://github.com/<your-user>/gym-tracker-oss.git
 cd gym-tracker-oss
-cp .env.example .env.local  # see .env.example for every variable
+npm install
+```
 
-# 2. Deploy the AWS infrastructure (DynamoDB + Cognito)
+### 2. Deploy the AWS infrastructure
+
+This creates 5 DynamoDB tables, a Cognito User Pool, and a single pre-created owner user. Pick your own `OwnerEmail` — it's the email you'll use to sign in.
+*REMEMBER to export the AWS_PROFILE if you are using the SSO*
+
+```bash
 sam deploy --guided \
+  --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \
     AppName=gym-tracker \
     Environment=dev \
-    OwnerEmail=yourmail@example.com
-
-# 3. Set the owner's temporary password (forced change on first login)
-aws cognito-idp admin-set-user-password \
-  --user-pool-id <UserPoolId from SAM outputs> \
-  --username yourmail@example.com \
-  --password 'TempPwd1!'
-
-# 4. Connect the Amplify console to your fork, then copy the variables
-#    from the SAM stack's `EnvironmentVariables` output into the Amplify
-#    "Environment variables" panel. Add AI_PROVIDER + provider keys if needed.
-
-# 5. Open the Amplify URL → sign in with email + temp password → set the new one
+    OwnerEmail=you@example.com
 ```
 
-The authoritative deploy reference is the inline comments inside `template.yaml`, `amplify.yml`, and `.env.example`. They are kept in sync with the code; there is no separate `docs/` tree.
+`CAPABILITY_NAMED_IAM` is required because the template creates IAM resources with explicit names — a managed policy (`<AppName>-runtime-<Environment>`) and the Amplify compute role (`<AppName>-amplify-compute-<Environment>`) that the SSR runtime assumes (see step 4b).
 
-### Automated SAM deploys (optional)
+`--guided` runs an interactive flow. Recommended answers:
 
-The first deploy is easiest with `sam deploy --guided` from your laptop. For
-subsequent deploys you can use the included GitHub Action at
-`.github/workflows/deploy-sam.yml` — it's gated behind `workflow_dispatch`, so
-it only runs when you launch it from the Actions tab. The job intentionally
-does **not** touch Amplify environment variables; after a stack change it just
-prints the `EnvironmentVariables` output for you to paste into the Amplify
-console.
+| Prompt | Answer |
+|---|---|
+| **Stack Name** | something descriptive, e.g. `gym-tracker-dev` (don't keep the default `sam-app`). |
+| **AWS Region** | the region where infra lives, e.g. `eu-south-1`. Bedrock runs in its own region (`BEDROCK_REGION`), so you're not locked in here. |
+| **Parameter `AppName` / `Environment` / `OwnerEmail`** | already filled from `--parameter-overrides`, just press Enter. |
+| **Confirm changes before deploy** | `y` — review the changeset on the first deploy. |
+| **Allow SAM CLI IAM role creation** | `Y` — the template creates IAM policies. |
+| **Disable rollback** | `N` — keep rollback enabled. |
+| **`OwnerUser` may not have authorization defined, Is this okay?** | `y` — false positive, SAM raises this on any non-Lambda resource. |
+| **Save arguments to configuration file** | `Y` — creates `samconfig.toml` so future deploys are just `sam deploy`. |
+| **SAM configuration file** | Enter (default `samconfig.toml`). |
+| **SAM configuration environment** | Enter (default `default`). |
 
-One-off setup:
+The deploy takes a few minutes — Cognito is the slowest resource. When it finishes, the **`EnvironmentVariables`** output block contains the values you'll need next — copy them somewhere handy.
 
-1. Create an IAM role in your AWS account with permissions to deploy this stack
-   (CloudFormation, DynamoDB, Cognito). Its trust policy must allow
-   `sts:AssumeRoleWithWebIdentity` from this GitHub repo via OIDC
-   (`token.actions.githubusercontent.com`).
-2. Add the following **repository secrets** in GitHub:
-   - `AWS_DEPLOY_ROLE_ARN`
-   - `AWS_DEPLOY_REGION` (e.g. `eu-south-1`)
-   - `SAM_STACK_NAME`
-   - `SAM_OWNER_EMAIL`
-3. Optional: set repository **variables** `SAM_APP_NAME` and the workflow input
-   `environment` if you want anything other than the defaults.
+> ⚠️ **Keep `AppName` consistent.** Whatever you choose here (`gym-tracker`, `gym-tracker-oss`, …) must match exactly the `APP_NAME` you set in Amplify env vars (step 4b). `amplify.yml` derives the DynamoDB table names from it — a mismatch means the app can't find its data.
+
+### 3. Set the Cognito owner's temporary password
+
+Cognito creates the owner user empty. Set a temporary password (you'll be forced to change it on first login):
+
+```bash
+aws cognito-idp admin-set-user-password \
+  --user-pool-id <UserPoolId from step 2 output> \
+  --username you@example.com \
+  --password 'TempPwd1!'
+```
+
+From here, pick **one** of the two paths below.
+
+### 4a. Run locally (`npm run dev`)
+
+Useful for trying the app, or for development work, against the live AWS stack from your laptop.
+
+```bash
+cp .env.example .env.local
+```
+
+Open `.env.local` and fill in:
+
+- `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` — from step 2 output.
+- `DYNAMO_TABLE_*` — follow the pattern `<AppName>-<table>-<Environment>`, e.g. `gym-tracker-exercises-dev`.
+- `AI_PROVIDER=off` to start (or wire up a provider — see [AI Providers](#ai-providers)).
+
+Then:
+
+```bash
+npm run dev
+```
+
+Open <http://localhost:3000>, sign in with the email + temp password, set a new one.
+
+### 4b. Deploy to Amplify (production)
+
+1. In the AWS Amplify console: "Host a web app" → connect your forked GitHub repo, pick the branch.
+2. Under **App settings → Environment variables**, add the variables below.
+
+   **Required — always set these:**
+
+   | Variable | Value | Where it comes from |
+   |---|---|---|
+   | `APP_AWS_REGION` | e.g. `eu-south-1` | the region your SAM stack runs in |
+   | `APP_NAME` | e.g. `gym-tracker` | **must match exactly** the `AppName` from `sam deploy` |
+   | `ENVIRONMENT` | e.g. `dev` | **must match exactly** the `Environment` from `sam deploy` |
+   | `COGNITO_USER_POOL_ID` | long ID | SAM `EnvironmentVariables` output |
+   | `COGNITO_CLIENT_ID` | long ID | SAM `EnvironmentVariables` output |
+   | `AI_PROVIDER` | one of `bedrock` / `gemini` / `openai` / `anthropic` / `off` | pick one |
+
+   **Optional:**
+
+   | Variable | Value | Default if unset |
+   |---|---|---|
+   | `DEFAULT_LANG` | `it` or `en` | `it` |
+
+   **Conditional — only if `AI_PROVIDER` is not `off`:**
+
+   | If `AI_PROVIDER` is | Set |
+   |---|---|
+   | `bedrock` | `BEDROCK_REGION` (e.g. `us-east-1`), `BEDROCK_MODEL_ID` (e.g. `anthropic.claude-haiku-4-5`) |
+   | `gemini` | `GEMINI_API_KEY`, `GEMINI_MODEL` (e.g. `gemini-2.5-flash`) |
+   | `openai` | `OPENAI_API_KEY`, `OPENAI_MODEL` (e.g. `gpt-4o-mini`) |
+   | `anthropic` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (e.g. `claude-haiku-4-5`) |
+
+   **Do NOT set in Amplify** (they would just clutter the panel — nothing reads them at runtime):
+
+   - `DYNAMO_TABLE_*` — derived at build time by `amplify.yml` from `APP_NAME + ENVIRONMENT`.
+   - `DYNAMODB_ACCESS_KEY` / `DYNAMODB_SECRET_KEY` / `DYNAMODB_SESSION_TOKEN` — production uses the Amplify compute role, not static keys.
+   - `NODE_ENV` — Amplify sets this to `production` automatically.
+
+3. Trigger the build (Amplify auto-detects `amplify.yml`).
+4. **Bind the SSR compute role to the Amplify app** (one-off — see below).
+5. When the build is green and the role is bound, open the Amplify URL, sign in with email + temp password, set the new one.
+
+#### Binding the SSR compute role
+
+The SAM stack already creates an IAM role named `<AppName>-amplify-compute-<Environment>` (e.g. `gym-tracker-amplify-compute-dev`) with DynamoDB access pre-attached. You just need to tell Amplify to use it for the SSR runtime — one CLI call:
+
+```bash
+aws amplify update-app \
+  --app-id <APP_ID> \
+  --compute-role-arn <AmplifyComputeRoleArn from sam deploy outputs> \
+  --region <your region>
+```
+
+`<APP_ID>` is the 12-ish-char string in the Amplify console URL (e.g. `d136lpmaniqigy`), also visible under **App settings → General**.
+
+After the call, **redeploy the app from the Amplify console** ("Redeploy this version") — the compute role is only picked up on the next deploy.
+
+When you add a new DynamoDB table later, the managed policy auto-updates at the next `sam deploy` and the role inherits it — no re-bind required.
+
+> ⚠️ **Env var changes require a manual rebuild.** Amplify does **not** redeploy automatically when you edit variables in the console. The `.env.production` file is regenerated only at build time — so after any env var change, click "Redeploy this version" (or push a commit) to pick up the new values. Symptoms of a stale build: login returns HTTP 500 (`auth_not_configured`) even though the variables look correct in the console.
+
+> ⚠️ **Symptom: login works but `/api/data/*` returns 500 with `CredentialsProviderError`.** The compute role is not bound to the app, so the SSR runtime has no AWS credentials. Re-run the `aws amplify update-app --compute-role-arn …` command above and redeploy. Cognito itself does **not** need IAM permissions — `InitiateAuth` is a public API and JWT verification uses the public JWKS endpoint.
+
+---
+
+The authoritative deploy reference is the inline comments inside `template.yaml`, `amplify.yml`, and `.env.example`. There is no separate `docs/` tree.
+
+Subsequent infra changes: edit `template.yaml`, then re-run `sam deploy` (no flags needed once `samconfig.toml` exists). For a single-user self-hosted app, running SAM from your laptop is simpler than wiring up OIDC + GitHub Actions for the handful of infra changes you'll ever make.
 
 ## AI Providers
 

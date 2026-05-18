@@ -6,7 +6,7 @@ version: 1
 # Required env vars in the Amplify console (App settings → Environment variables):
 #   - APP_AWS_REGION
 #   - APP_NAME, ENVIRONMENT          (derive DynamoDB table names)
-#   - COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, OWNER_EMAIL
+#   - COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID
 #   - AI_PROVIDER (+ matching provider credentials below)
 #
 # Optional, provider-specific (set only those you use):
@@ -44,7 +44,6 @@ frontend:
           DYNAMO_TABLE_SETTINGS=${APP_NAME}-settings-${ENVIRONMENT}
           COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
           COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
-          OWNER_EMAIL=${OWNER_EMAIL}
           AI_PROVIDER=${AI_PROVIDER}
           BEDROCK_REGION=${BEDROCK_REGION}
           BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID}

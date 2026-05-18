@@ -32,6 +32,8 @@ docs(readme): clarify Cognito password setup
 
 ## Before Opening a PR
 
+There is no CI in this repo — Amplify builds on merge to `main`, so the only pre-merge safety net is what you run locally. Both of these must pass:
+
 ```bash
 npx tsc --noEmit   # type-check (also runs as part of build)
 npm run build      # must pass — includes full TS check

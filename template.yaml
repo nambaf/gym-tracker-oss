@@ -146,6 +146,60 @@ Resources:
         - { Key: Environment, Value: !Ref Environment }
         - { Key: Application, Value: !Ref AppName }
 
+  # ─── IAM for the Amplify SSR runtime ────────────────────────────────────────
+  # Two resources work together:
+  #   * AppRuntimePolicy — managed policy with the DynamoDB permissions.
+  #   * AmplifyComputeRole — IAM role the SSR runtime assumes; the policy above
+  #     is attached to it. After `sam deploy`, bind this role to the Amplify
+  #     app once with `aws amplify update-app --compute-role-arn …` (see README).
+  AppRuntimePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${AppName}-runtime-${Environment}'
+      Description: 'DynamoDB access for the gym-tracker SSR runtime'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+            Resource:
+              - !GetAtt ExercisesTable.Arn
+              - !GetAtt SessionsTable.Arn
+              - !GetAtt SetsTable.Arn
+              - !GetAtt PlansTable.Arn
+              - !GetAtt SettingsTable.Arn
+
+  # Role assumed by the Amplify Hosting SSR compute (the Next.js Lambda that
+  # Amplify provisions internally — not visible via `aws lambda list-functions`).
+  # Trust principal must be `amplify.amazonaws.com`. Without this role bound to
+  # the app, the SSR runtime has no AWS credentials and the AWS SDK fails with
+  # `CredentialsProviderError: Could not load credentials from any providers`.
+  AmplifyComputeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AppName}-amplify-compute-${Environment}'
+      Description: 'Assumed by the Amplify SSR runtime to access DynamoDB'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: amplify.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref AppRuntimePolicy
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Application, Value: !Ref AppName }
+
   # ─── Cognito (single-user auth) ─────────────────────────────────────────────
 
   UserPool:
@@ -241,9 +295,19 @@ Outputs:
     Value: !Ref UserPoolClient
     Export: { Name: !Sub '${AWS::StackName}-UserPoolClientId' }
 
+  AppRuntimePolicyArn:
+    Description: 'ARN of the managed policy granting DynamoDB access (already attached to AmplifyComputeRole).'
+    Value: !Ref AppRuntimePolicy
+    Export: { Name: !Sub '${AWS::StackName}-AppRuntimePolicyArn' }
+
+  AmplifyComputeRoleArn:
+    Description: 'Pass this ARN to `aws amplify update-app --compute-role-arn …` to grant the SSR runtime DynamoDB access.'
+    Value: !GetAtt AmplifyComputeRole.Arn
+    Export: { Name: !Sub '${AWS::StackName}-AmplifyComputeRoleArn' }
+
   # Block to copy into Amplify env variables after `sam deploy`.
   # `amplify.yml` derives DynamoDB table names from APP_NAME + ENVIRONMENT,
-  # so only Cognito IDs and OwnerEmail must be set in the Amplify console.
+  # so only Cognito IDs must be set in the Amplify console.
   EnvironmentVariables:
     Description: 'Env vars to set in the Amplify console'
     Value: !Sub |
@@ -252,4 +316,3 @@ Outputs:
       ENVIRONMENT=${Environment}
       COGNITO_USER_POOL_ID=${UserPool}
       COGNITO_CLIENT_ID=${UserPoolClient}
-      OWNER_EMAIL=${OwnerEmail}
