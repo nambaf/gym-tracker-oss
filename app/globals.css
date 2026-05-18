@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────────
+   Gym Tracker · sistema "Solo"
+   Light, warm-paper, editoriale. Coral come unico accento.
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Spacing / radii / motion */
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 1.75rem;
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* Solo palette mirrors */
+  --ink: #1a1916;
+  --ink-soft: #3d3b36;
+  --muted: #6b6962;
+  --muted-2: #a8a59c;
+  --paper: #f4f1ec;
+  --paper-card: #ffffff;
+  --paper-sunken: #ebe7df;
+  --border: rgba(26, 25, 22, 0.08);
+  --border-strong: rgba(26, 25, 22, 0.14);
+  --accent: #d6492a;
+  --accent-tint: rgba(214, 73, 42, 0.08);
+}
+
+html, body { color-scheme: light; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Disable dark scheme entirely — Solo is light-first */
+@media (prefers-color-scheme: dark) {
+  body { background: var(--paper); color: var(--ink); }
+}
+
+.container { @apply max-w-3xl mx-auto px-4; }
+.safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* ──────────────────────────────────────────────────────────────
+   Components
+   ────────────────────────────────────────────────────────────── */
+@layer components {
+  /* ── Buttons ─────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-xl px-4 py-2.5 text-[15px] font-medium
+           bg-paper-card text-ink border border-ink/10
+           hover:bg-paper-sunken active:scale-[0.98]
+           transition-all;
+  }
+  .btn-primary {
+    @apply btn bg-ink text-white border-transparent
+           hover:bg-ink-soft active:scale-[0.98]
+           shadow-sm shadow-ink/10;
+  }
+  .btn-accent {
+    @apply btn bg-accent-500 text-white border-transparent
+           hover:bg-accent-600 active:scale-[0.98]
+           shadow-sm shadow-accent-500/20;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent border-transparent hover:bg-ink/5 text-ink;
+  }
+  .btn-icon {
+    @apply btn p-0 w-10 h-10 rounded-xl;
+  }
+  .btn-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full
+           px-3 py-1.5 text-xs font-semibold
+           bg-paper-card text-ink-soft border border-ink/10;
+  }
+
+  /* ── Inputs ──────────────────────────────── */
+  .input {
+    @apply w-full rounded-xl border border-ink/10 bg-paper-card
+           px-3.5 py-2.5 text-base text-ink placeholder:text-muted
+           focus:outline-none focus:border-ink/30 focus:ring-2 focus:ring-ink/10
+           transition-colors;
+  }
+  .input-big {
+    @apply input text-center text-2xl font-medium tabular-nums tracking-tight2;
+  }
+
+  /* ── Cards ───────────────────────────────── */
+  .card {
+    @apply rounded-2xl bg-paper-card border border-ink/[0.06]
+           shadow-[0_1px_0_rgba(26,25,22,0.03),0_8px_24px_-16px_rgba(26,25,22,0.12)];
+  }
+  .card-dark {
+    @apply rounded-2xl bg-ink text-white border-transparent shadow-sm;
+  }
+  .card-sunken {
+    @apply rounded-2xl bg-paper-sunken border border-transparent;
+  }
+
+  /* ── Type primitives ─────────────────────── */
+  .eyebrow {
+    @apply text-[11px] uppercase tracking-[0.14em] font-semibold text-muted;
+  }
+  .label {
+    @apply text-[10px] uppercase tracking-[0.14em] font-semibold text-muted;
+  }
+  .display {
+    @apply font-serif tracking-tight2;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── Stat blocks (editorial) ─────────────── */
+  .stat-card { @apply card p-4; }
+  .stat-label { @apply label mb-1.5; }
+  .stat-value { @apply text-3xl font-serif tracking-tight3 leading-none; }
+  .stat-subtitle { @apply text-xs text-muted mt-1.5; }
+
+  /* ── Modal ───────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center
+           bg-ink/40 backdrop-blur-sm animate-fade-in-up;
+  }
+  .modal-content {
+    @apply card w-full max-h-[85vh] overflow-y-auto bg-paper-card
+           sm:max-w-lg animate-slide-up sm:animate-scale-in;
+  }
+  .modal-header {
+    @apply sticky top-0 bg-paper-card/90 backdrop-blur-md
+           p-4 border-b border-ink/[0.06];
+  }
+  .modal-body { @apply p-4; }
+
+  /* ── Skeleton ────────────────────────────── */
+  .skeleton {
+    @apply rounded-xl bg-gradient-to-r from-paper-sunken via-paper-card to-paper-sunken
+           bg-[length:200%_100%] animate-shimmer;
+  }
+
+  /* ── Misc ────────────────────────────────── */
+  .link-accent {
+    @apply text-accent-500 hover:text-accent-600 transition-colors font-medium;
+  }
+  .divider { @apply h-px bg-ink/[0.06]; }
+  .divider-v { @apply w-px bg-ink/[0.06] self-stretch; }
+
+  /* Hide scrollbar */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+
+  /* Pill segmented control */
+  .seg {
+    @apply inline-flex bg-paper-sunken rounded-xl p-1 gap-1;
+  }
+  .seg-btn {
+    @apply px-3 py-1.5 rounded-lg text-sm font-medium text-muted
+           transition-all;
+  }
+  .seg-btn.active {
+    @apply bg-paper-card text-ink shadow-sm;
+  }
+
+  /* Tag chip (data) */
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-md
+           text-[11px] font-medium text-ink-soft bg-paper-sunken;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip-accent {
+    @apply chip bg-accent-50 text-accent-600;
+  }
+}
+
+/* A11y */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

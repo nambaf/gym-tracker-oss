@@ -1,0 +1,255 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Gym Tracker — Backend for single-user self-hosted (DynamoDB + Cognito)'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parameters
+#
+# CUSTOMIZE:
+#   - AppName: prefix of ALL resources.
+#   - Environment: dev | staging | prod. Added as suffix to table names.
+#   - OwnerEmail: pre-created Cognito user (the only one allowed to sign in).
+#
+# After `sam deploy`, set the owner's temporary password manually:
+#   aws cognito-idp admin-set-user-password \
+#     --user-pool-id <UserPoolId from outputs> \
+#     --username <OwnerEmail> \
+#     --password '<TempPwd>'   # no --permanent → forced change at first login
+# ─────────────────────────────────────────────────────────────────────────────
+
+Parameters:
+  AppName:
+    Type: String
+    Default: gym-tracker
+    Description: |
+      Slug used as prefix in all resource names (e.g. DynamoDB tables).
+    AllowedPattern: '^[a-z][a-z0-9-]{2,30}$'
+    ConstraintDescription: lowercase, digits and hyphens, 3-31 chars, must start with a letter.
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Suffix appended to resource names (e.g. table `<AppName>-sets-<Environment>`).
+
+  OwnerEmail:
+    Type: String
+    Description: Email of the single owner user. A Cognito user is pre-created with this address.
+    AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    ConstraintDescription: must be a valid email address.
+
+Resources:
+
+  # ─── DynamoDB tables ────────────────────────────────────────────────────────
+
+  ExercisesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AppName}-exercises-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Application, Value: !Ref AppName }
+
+  SessionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AppName}-sessions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: date, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: date-index
+          KeySchema:
+            - { AttributeName: date, KeyType: HASH }
+          Projection: { ProjectionType: ALL }
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Application, Value: !Ref AppName }
+
+  SetsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AppName}-sets-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: sessionId, AttributeType: S }
+        - { AttributeName: exerciseId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: sessionId-index
+          KeySchema:
+            - { AttributeName: sessionId, KeyType: HASH }
+          Projection: { ProjectionType: ALL }
+        - IndexName: exerciseId-index
+          KeySchema:
+            - { AttributeName: exerciseId, KeyType: HASH }
+          Projection: { ProjectionType: ALL }
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Application, Value: !Ref AppName }
+
+  PlansTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AppName}-plans-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Application, Value: !Ref AppName }
+
+  SettingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AppName}-settings-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Application, Value: !Ref AppName }
+
+  # ─── Cognito (single-user auth) ─────────────────────────────────────────────
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AppName}-users-${Environment}'
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      UserPoolTags:
+        Environment: !Ref Environment
+        Application: !Ref AppName
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${AppName}-web-${Environment}'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      # 5h ID/access tokens cover a full workout (warm-up + sets + AI debrief)
+      # without forcing a mid-session re-login. Must match COOKIE_MAX_AGE in
+      # `lib/auth.ts`.
+      AccessTokenValidity: 5
+      IdTokenValidity: 5
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  OwnerUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Ref OwnerEmail
+      DesiredDeliveryMediums: []
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: email
+          Value: !Ref OwnerEmail
+        - Name: email_verified
+          Value: 'true'
+
+Outputs:
+  AppName:
+    Description: Application name
+    Value: !Ref AppName
+
+  ExercisesTableName:
+    Value: !Ref ExercisesTable
+    Export: { Name: !Sub '${AWS::StackName}-ExercisesTable' }
+
+  SessionsTableName:
+    Value: !Ref SessionsTable
+    Export: { Name: !Sub '${AWS::StackName}-SessionsTable' }
+
+  SetsTableName:
+    Value: !Ref SetsTable
+    Export: { Name: !Sub '${AWS::StackName}-SetsTable' }
+
+  PlansTableName:
+    Value: !Ref PlansTable
+    Export: { Name: !Sub '${AWS::StackName}-PlansTable' }
+
+  SettingsTableName:
+    Value: !Ref SettingsTable
+    Export: { Name: !Sub '${AWS::StackName}-SettingsTable' }
+
+  UserPoolId:
+    Value: !Ref UserPool
+    Export: { Name: !Sub '${AWS::StackName}-UserPoolId' }
+
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+    Export: { Name: !Sub '${AWS::StackName}-UserPoolClientId' }
+
+  # Block to copy into Amplify env variables after `sam deploy`.
+  # `amplify.yml` derives DynamoDB table names from APP_NAME + ENVIRONMENT,
+  # so only Cognito IDs and OwnerEmail must be set in the Amplify console.
+  EnvironmentVariables:
+    Description: 'Env vars to set in the Amplify console'
+    Value: !Sub |
+      APP_AWS_REGION=${AWS::Region}
+      APP_NAME=${AppName}
+      ENVIRONMENT=${Environment}
+      COGNITO_USER_POOL_ID=${UserPool}
+      COGNITO_CLIENT_ID=${UserPoolClient}
+      OWNER_EMAIL=${OwnerEmail}

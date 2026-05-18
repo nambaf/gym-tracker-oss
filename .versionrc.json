@@ -1,0 +1,15 @@
+{
+  "types": [
+    { "type": "feat", "section": "Features", "hidden": false },
+    { "type": "fix", "section": "Bug Fixes", "hidden": false },
+    { "type": "perf", "section": "Performance", "hidden": false },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "refactor", "section": "Refactoring", "hidden": false },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true },
+    { "type": "style", "section": "Code Style", "hidden": true }
+  ],
+  "commitUrlFormat": "https://github.com/nambaf/gym-tracker-oss/commit/{{hash}}",
+  "compareUrlFormat": "https://github.com/nambaf/gym-tracker-oss/compare/{{previousTag}}...{{currentTag}}",
+  "issueUrlFormat": "https://github.com/nambaf/gym-tracker-oss/issues/{{id}}"
+}

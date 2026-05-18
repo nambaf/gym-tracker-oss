@@ -1,0 +1,64 @@
+# Node modules
+node_modules/
+
+# Build output
+dist/
+out/
+.next/
+target/
+
+# Logs
+logs/
+*.log
+yarn-error.log
+npm-debug.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Cache
+.cache/
+.npm/
+.pnpm-store/
+.eslintcache
+*.tsbuildinfo
+
+# Public uploads (if any)
+public/uploads/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Misc
+coverage/
+*.swp
+*.swo
+
+# Dependency directories
+bower_components/
+
+# Others
+*.tgz
+
+# Personal data exports
+/backup/
+*.bak.json
+
+# AWS SAM build artifacts
+.aws-sam/
+samconfig.toml
+samconfig.local.toml
+
+# Extra
+.claude/
+.env.production
+claude.md

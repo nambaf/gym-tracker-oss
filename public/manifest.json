@@ -1,0 +1,19 @@
+{
+  "name": "Gym Tracker",
+  "short_name": "Gym",
+  "description": "Mobile-first gym workout tracker, self-hosted on AWS.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f1ec",
+  "theme_color": "#f4f1ec",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}
