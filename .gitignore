@@ -52,6 +52,7 @@ bower_components/
 # Personal data exports
 /backup/
 *.bak.json
+backup-pre-migration/
 
 # AWS SAM build artifacts
 .aws-sam/
@@ -62,3 +63,4 @@ samconfig.local.toml
 .claude/
 .env.production
 claude.md
+

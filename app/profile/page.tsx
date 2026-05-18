@@ -7,6 +7,7 @@ import type { TrainingMode } from '@/lib/hypertrophyThresholds'
 import type { Settings, ThresholdsMatrix, RecommendedSetsMatrix } from '@/lib/settings/types'
 import { MuscleGroup } from '@/lib/bodyMapUtils'
 import { useT } from '@/lib/i18n/I18nProvider'
+import { LangSwitcher } from '@/components/LangSwitcher'
 
 const TRAINING_MODES: readonly TrainingMode[] = ['intensity', 'volume', 'mixed']
 const MUSCLE_GROUPS = Object.values(MuscleGroup) as MuscleGroup[]
@@ -160,6 +161,11 @@ export default function ProfilePage() {
         <h1 className="display text-3xl leading-tight">{t.profile.title}</h1>
         <p className="text-sm text-muted mt-2">{t.profile.subtitle}</p>
       </header>
+
+      {/* LANGUAGE — writes cookie + reloads; unsaved form changes are lost */}
+      <section className="card p-4">
+        <LangSwitcher />
+      </section>
 
       {/* BASIC */}
       <section className="card p-4 space-y-5">
