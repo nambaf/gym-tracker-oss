@@ -4,8 +4,7 @@ import type { LoadState } from '@/lib/fetchJson'
 import type { SetEntry } from '@/lib/models'
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 import { useT } from '@/lib/i18n/I18nProvider'
-
-const FAILURE_TAG = 'cedimento'
+import { isFailureSet, formatSetNote } from '@/lib/setNotes'
 
 interface Props {
   exerciseId: string
@@ -68,8 +67,8 @@ export default function PreviousSessionSets({ exerciseId, currentSessionId, curr
             <span key={s.id} className="inline-flex items-center gap-1 text-[13px] num text-ink-soft">
               <span className="text-muted text-[10px] uppercase tracking-wide">{i + 1}</span>
               <span>{s.weight}×{s.reps}</span>
-              {s.note?.includes(FAILURE_TAG) && (
-                <span className="text-[9px] text-accent-500 font-bold">★</span>
+              {isFailureSet(s) && (
+                <span className="text-[10px] text-accent-500 font-bold" title={t.setRow.failureToggle}>★</span>
               )}
               {cmp === 'up'   && <ArrowUp   size={11} className="text-success" strokeWidth={2.6} />}
               {cmp === 'down' && <ArrowDown size={11} className="text-accent-500" strokeWidth={2.6} />}
@@ -78,6 +77,20 @@ export default function PreviousSessionSets({ exerciseId, currentSessionId, curr
           )
         })}
       </div>
+      {previousSets.some(s => formatSetNote(s.note, t.setRow.intensityOpts)) && (
+        <div className="mt-2 space-y-0.5">
+          {previousSets.map((s, i) => {
+            const note = formatSetNote(s.note, t.setRow.intensityOpts)
+            if (!note) return null
+            return (
+              <div key={s.id} className="text-[11px] text-ink-soft italic break-words">
+                <span className="text-muted text-[10px] not-italic num mr-1">{i + 1}</span>
+                {note}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

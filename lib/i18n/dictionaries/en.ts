@@ -183,6 +183,7 @@ export const en: Dictionary = {
     firstTimePrefix: 'First time',
     firstTimeSuffix: '. Start with a manageable weight and focus on technique.',
     lastTime: 'Last time',
+    lastFailure: 'Last failure',
     maxE1rm: 'Max e1RM',
     avgIntensityShort: 'Avg int.',
     expandPrefix: 'Last',

@@ -5,14 +5,14 @@ import type { LoadState } from '@/lib/fetchJson'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 import type { Lang } from '@/lib/i18n'
+import { isFailureSet, formatSetNote } from '@/lib/setNotes'
 
 const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
-const FAILURE_TAG = 'cedimento'
 
 type HistoryStats = {
-  lastPerformance: { date: string; weight: number; reps: number; rpe?: number; note?: string; daysAgo: number } | null
+  lastPerformance: { date: string; weight: number; reps: number; rpe?: number; note?: string; isFailure: boolean; daysAgo: number } | null
   lastFailure: { date: string; weight: number; reps: number; daysAgo: number } | null
-  recentSets: Array<{ date: string; weight: number; reps: number; rpe?: number; note?: string; e1rm: number }>
+  recentSets: Array<{ date: string; weight: number; reps: number; rpe?: number; note?: string; isFailure: boolean; e1rm: number }>
   maxE1rm: number
   avgIntensity: number
 }
@@ -49,10 +49,11 @@ export default function ExerciseHistory({
     const lastPerformance = {
       date: last.date.toLocaleDateString(LOCALE[lang]),
       weight: last.weight, reps: last.reps, rpe: last.rpe, note: last.note,
+      isFailure: isFailureSet(last),
       daysAgo: Math.floor((now.getTime() - last.date.getTime()) / (1000 * 60 * 60 * 24)),
     }
 
-    const failureSet = exerciseSets.find((s: any) => s.rpe === 10 || s.note?.includes(FAILURE_TAG))
+    const failureSet = exerciseSets.find((s: any) => isFailureSet(s))
     const lastFailure = failureSet ? {
       date: failureSet.date.toLocaleDateString(LOCALE[lang]),
       weight: failureSet.weight, reps: failureSet.reps,
@@ -62,6 +63,7 @@ export default function ExerciseHistory({
     const recentSets = exerciseSets.slice(0, 5).map((s: any) => ({
       date: s.date.toLocaleDateString(LOCALE[lang]),
       weight: s.weight, reps: s.reps, rpe: s.rpe, note: s.note,
+      isFailure: isFailureSet(s),
       e1rm: Math.round(epley1RM(s.weight, s.reps)),
     }))
 
@@ -114,6 +116,7 @@ export default function ExerciseHistory({
   }
 
   const stale = (stats.lastPerformance?.daysAgo || 0) > 14
+  const lastNote = formatSetNote(stats.lastPerformance?.note, t.setRow.intensityOpts)
 
   return (
     <div className="space-y-2">
@@ -124,6 +127,9 @@ export default function ExerciseHistory({
             <>
               <div className="text-[15px] font-semibold num mt-1">
                 {stats.lastPerformance.weight} kg × {stats.lastPerformance.reps}
+                {stats.lastPerformance.isFailure && (
+                  <span className="text-accent-500 ml-1 text-xs font-bold" title={t.setRow.failureToggle}>★</span>
+                )}
                 {stats.lastPerformance.rpe && (
                   <span className="text-muted ml-1 text-xs">@{stats.lastPerformance.rpe}</span>
                 )}
@@ -131,6 +137,9 @@ export default function ExerciseHistory({
               <div className={`text-[11px] mt-0.5 ${stale ? 'text-warning' : 'text-muted'}`}>
                 {formatDaysAgo(stats.lastPerformance.daysAgo)}
               </div>
+              {lastNote && (
+                <div className="text-[11px] text-ink-soft italic mt-1 break-words">{lastNote}</div>
+              )}
             </>
           )}
         </div>
@@ -145,6 +154,15 @@ export default function ExerciseHistory({
         </div>
       </div>
 
+      {stats.lastFailure && (
+        <div className="text-[11px] text-muted px-1">
+          <span className="text-accent-500 font-bold">★</span>{' '}
+          {t.exerciseHistory.lastFailure}:{' '}
+          <span className="num text-ink-soft">{stats.lastFailure.weight} kg × {stats.lastFailure.reps}</span>
+          {' · '}{formatDaysAgo(stats.lastFailure.daysAgo)}
+        </div>
+      )}
+
       {stats.recentSets.length > 0 && (
         <>
           <button
@@ -155,17 +173,28 @@ export default function ExerciseHistory({
             {t.exerciseHistory.expandPrefix} {stats.recentSets.length} set
           </button>
           {expanded && (
-            <div className="space-y-1 px-1">
-              {stats.recentSets.map((set, i) => (
-                <div key={i} className="flex items-center justify-between text-xs">
-                  <span className="text-muted">{set.date}</span>
-                  <span className="num">
-                    {set.weight} × {set.reps}
-                    {set.rpe && <span className="text-muted ml-1">@{set.rpe}</span>}
-                  </span>
-                  <span className="text-muted-2 num">e1RM {set.e1rm}</span>
-                </div>
-              ))}
+            <div className="space-y-1.5 px-1">
+              {stats.recentSets.map((set, i) => {
+                const note = formatSetNote(set.note, t.setRow.intensityOpts)
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted">{set.date}</span>
+                      <span className="num">
+                        {set.weight} × {set.reps}
+                        {set.isFailure && (
+                          <span className="text-accent-500 ml-1 text-[10px] font-bold" title={t.setRow.failureToggle}>★</span>
+                        )}
+                        {set.rpe && <span className="text-muted ml-1">@{set.rpe}</span>}
+                      </span>
+                      <span className="text-muted-2 num">e1RM {set.e1rm}</span>
+                    </div>
+                    {note && (
+                      <div className="text-[11px] text-ink-soft italic break-words">{note}</div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </>

@@ -3,22 +3,9 @@ import { useEffect, useState, useMemo } from 'react'
 import { epley1RM } from '@/lib/progress'
 import { Minus, Plus, Lightbulb, Battery } from 'lucide-react'
 import { useT } from '@/lib/i18n/I18nProvider'
+import { FAILURE_TAG, INTENSITY_KEYS } from '@/lib/setNotes'
 
 const toNum = (s: string) => parseFloat(s.replace(',', '.'))
-const FAILURE_TAG = 'cedimento'
-
-/**
- * Canonical intensity tag stored verbatim in `Set.note` (Italian, for data
- * backward compat). Display labels come from the dictionary.
- */
-type IntensityKey = 'veryEasy' | 'easy' | 'medium' | 'hard' | 'veryHard'
-const INTENSITY_KEYS: { key: IntensityKey; tag: string }[] = [
-  { key: 'veryEasy', tag: 'Molto facile' },
-  { key: 'easy', tag: 'Facile' },
-  { key: 'medium', tag: 'Medio' },
-  { key: 'hard', tag: 'Difficile' },
-  { key: 'veryHard', tag: 'Molto difficile' },
-]
 
 export function SetRow({
   onSave,

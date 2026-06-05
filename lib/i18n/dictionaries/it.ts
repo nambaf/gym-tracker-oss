@@ -159,6 +159,7 @@ export type Dictionary = {
     firstTimePrefix: string
     firstTimeSuffix: string
     lastTime: string
+    lastFailure: string
     maxE1rm: string
     avgIntensityShort: string
     expandPrefix: string
@@ -647,6 +648,7 @@ export const it: Dictionary = {
     firstTimePrefix: 'Prima volta',
     firstTimeSuffix: '. Inizia con un peso gestibile e concentrati sulla tecnica.',
     lastTime: 'Ultima volta',
+    lastFailure: 'Ultimo cedimento',
     maxE1rm: 'Max e1RM',
     avgIntensityShort: 'Int. media',
     expandPrefix: 'Ultimi',
