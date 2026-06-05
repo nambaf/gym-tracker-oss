@@ -240,6 +240,7 @@ export type Dictionary = {
     today: string
     yesterday: string
     daysAgoSuffix: string
+    allSets: string
   }
   sessionSummary: {
     title: string
@@ -729,6 +730,7 @@ export const it: Dictionary = {
     today: 'oggi',
     yesterday: 'ieri',
     daysAgoSuffix: 'g fa',
+    allSets: 'tutti',
   },
   sessionSummary: {
     title: 'Riepilogo sessione',

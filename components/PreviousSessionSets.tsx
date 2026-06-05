@@ -52,6 +52,29 @@ export default function PreviousSessionSets({ exerciseId, currentSessionId, curr
   const prevDate = previousSets[0]?.ts ? new Date(previousSets[0].ts) : null
   const dayAgo = prevDate ? Math.floor((Date.now() - prevDate.getTime()) / (1000 * 60 * 60 * 24)) : 0
 
+  // Group identical notes so "Very hard" on every set renders once, not N times.
+  const noteGroups: { note: string; indices: number[] }[] = []
+  previousSets.forEach((s, i) => {
+    const note = formatSetNote(s.note, t.setRow.intensityOpts)
+    if (!note) return
+    const group = noteGroups.find(g => g.note === note)
+    if (group) group.indices.push(i + 1)
+    else noteGroups.push({ note, indices: [i + 1] })
+  })
+
+  /** Compress 1-based set indices into ranges: [1,2,3] → "1–3", [1,3] → "1, 3". */
+  function formatIndices(indices: number[]): string {
+    const parts: string[] = []
+    let start = indices[0]
+    let prev = indices[0]
+    for (const n of indices.slice(1).concat(NaN)) {
+      if (n === prev + 1) { prev = n; continue }
+      parts.push(start === prev ? `${start}` : `${start}–${prev}`)
+      start = prev = n
+    }
+    return parts.join(', ')
+  }
+
   return (
     <div className="rounded-2xl border border-dashed border-ink/[0.12] p-3 px-4">
       <div className="flex items-center justify-between mb-2">
@@ -77,18 +100,16 @@ export default function PreviousSessionSets({ exerciseId, currentSessionId, curr
           )
         })}
       </div>
-      {previousSets.some(s => formatSetNote(s.note, t.setRow.intensityOpts)) && (
-        <div className="mt-2 space-y-0.5">
-          {previousSets.map((s, i) => {
-            const note = formatSetNote(s.note, t.setRow.intensityOpts)
-            if (!note) return null
-            return (
-              <div key={s.id} className="text-[11px] text-ink-soft italic break-words">
-                <span className="text-muted text-[10px] not-italic num mr-1">{i + 1}</span>
-                {note}
-              </div>
-            )
-          })}
+      {noteGroups.length > 0 && (
+        <div className="mt-2.5 pt-2 border-t border-ink/[0.06] space-y-1">
+          {noteGroups.map(g => (
+            <div key={g.note} className="flex items-baseline gap-1.5 text-[11px]">
+              <span className="shrink-0 text-muted text-[10px] num uppercase tracking-wide">
+                {g.indices.length === previousSets.length ? t.previousSession.allSets : formatIndices(g.indices)}
+              </span>
+              <span className="text-ink-soft italic break-words">{g.note}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

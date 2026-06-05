@@ -264,6 +264,7 @@ export const en: Dictionary = {
     today: 'today',
     yesterday: 'yesterday',
     daysAgoSuffix: 'd ago',
+    allSets: 'all',
   },
   sessionSummary: {
     title: 'Session summary',
