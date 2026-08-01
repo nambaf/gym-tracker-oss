@@ -17,7 +17,10 @@ export function VolumeChart({ weeklyData, muscleVolumeData, period, trainingMode
   const t = useT()
   const thresholdsByMode = useDataStore(s => s.storedSettings.thresholdsByMode)
 
-  if (weeklyData.length === 0) {
+  // getWeeklyVolumeData always emits one entry per week, zeros included, so the
+  // old `length === 0` check was unreachable and a brand new account saw a row
+  // of empty bars instead of the empty state.
+  if (weeklyData.length === 0 || weeklyData.every(w => w.sets === 0)) {
     return (
       <div className="card p-6">
         <h3 className="text-lg font-semibold mb-4">{t.volumeChart.title}</h3>

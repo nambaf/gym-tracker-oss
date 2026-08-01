@@ -214,6 +214,8 @@ export type Dictionary = {
     saveBtnFailureSuffix: string
     saving: string
     saveFailed: string
+    flagsLabel: string
+    flagOpts: { pain: string; technique: string; interrupted: string; fatigued: string }
     nextTimeLabel: string
     nextTimeWeightPlaceholder: string
     nextTimeOpts: {
@@ -280,7 +282,6 @@ export type Dictionary = {
   }
   workout: {
     eyebrowDay: string
-    eyebrowReady: string
     exerciseLabel: string
     ofConnector: string
     setsTotalSuffix: string
@@ -295,6 +296,8 @@ export type Dictionary = {
     chipFailure: string
     removeExerciseBtn: string
     offPlanBadge: string
+    prTitle: string
+    prKind: { 'e1rm': string; 'weight': string; 'reps-at-weight': string }
     saving: string
     finishBtn: string
     pickerTitle: string
@@ -698,12 +701,12 @@ export const it: Dictionary = {
     deactivateBtn: 'Disattiva',
   },
   progressModal: {
-    title: 'Analisi Progresso (ultime 4 settimane)',
+    title: 'Analisi progresso (ultime {n} settimane)',
     empty: 'Ancora nessun dato di progresso.',
     emptySubtitle: 'Continua ad allenarti per vedere i trend!',
     currentE1rm: 'e1RM Corrente',
     avgE1rm: 'e1RM Medio',
-    footnote: 'Il progresso è calcolato confrontando l\'e1RM (massimale stimato) delle ultime 4 settimane.',
+    footnote: 'Il progresso confronta il miglior e1RM di ogni seduta nelle ultime {n} settimane.',
     badgeImproving: 'In miglioramento',
     badgeStable: 'Stabile',
     badgeDeclining: 'In calo',
@@ -732,6 +735,13 @@ export const it: Dictionary = {
     saveBtnFailureSuffix: '· cedimento',
     saving: 'Salvataggio…',
     saveFailed: 'Set non salvato. Controlla la connessione e riprova.',
+    flagsLabel: 'Com\'è andata',
+    flagOpts: {
+      pain: 'Dolore',
+      technique: 'Tecnica sporca',
+      interrupted: 'Serie interrotta',
+      fatigued: 'Ero già stanco',
+    },
     nextTimeLabel: 'La prossima volta',
     nextTimeWeightPlaceholder: 'Peso target (kg)',
     nextTimeOpts: {
@@ -798,7 +808,6 @@ export const it: Dictionary = {
   },
   workout: {
     eyebrowDay: 'Allenamento',
-    eyebrowReady: 'Pronto',
     exerciseLabel: 'Esercizio',
     ofConnector: 'di',
     setsTotalSuffix: 'set tot.',
@@ -813,6 +822,12 @@ export const it: Dictionary = {
     chipFailure: 'cedimento',
     removeExerciseBtn: 'Rimuovi esercizio dal workout',
     offPlanBadge: 'Fuori piano',
+    prTitle: 'Record personale!',
+    prKind: {
+      'e1rm': 'massimale stimato migliorato di {delta}',
+      'weight': 'carico più alto di sempre, +{delta}',
+      'reps-at-weight': '{delta} ripetizioni in più a questo carico',
+    },
     saving: 'Salvataggio…',
     finishBtn: 'Termina allenamento',
     pickerTitle: 'Aggiungi esercizio',

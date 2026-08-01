@@ -89,18 +89,6 @@ export default function SessionSummary({
     }
   }, [sets, exById, t.sessionSummary.miscMuscle])
 
-  async function persistSummary() {
-    const payload = {
-      volume,
-      failureSets,
-      totalSets,
-      avgIntensity,
-      musclesTop: musclesTop.map(m => m.muscle).join(','),
-    }
-    const res = await fetch(`/api/data/sessions/${sessionId}`, { method: 'PUT', body: JSON.stringify(payload) })
-    if (!res.ok) console.warn('PUT /sessions failed')
-  }
-
   if (setsState.status === 'loading' || exercisesState.status === 'loading') {
     return (
       <div className="modal-overlay">
@@ -177,9 +165,14 @@ export default function SessionSummary({
           </ul>
         </div>
 
+        {/* Nothing is written back here: every figure in this summary is derived
+            from the sets, and /history and the dashboard recompute them anyway.
+            Persisting them onto the session row created a second source of
+            truth that no one read and that only one of the three ways out of
+            this modal ever updated. */}
         <button
           className="btn-primary w-full mt-5 py-3"
-          onClick={async () => { await persistSummary(); onClose() }}
+          onClick={onClose}
         >
           {t.sessionSummary.cta}
         </button>

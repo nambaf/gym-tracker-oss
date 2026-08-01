@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
+import { localDayKey } from '@/lib/dateUtils'
 import { isFailureSet } from '@/lib/setNotes'
 import { useParams, useRouter } from 'next/navigation'
 import { epley1RM } from '@/lib/progress'
@@ -48,7 +49,7 @@ export default function ExerciseProgressPage() {
   const chartData = useMemo(() => {
     const byDay = new Map<string, number>()
     for (const s of exSets as any[]) {
-      const d = new Date(s.ts).toISOString().slice(0, 10)
+      const d = localDayKey(new Date(s.ts))
       const e1 = epley1RM(Number(s.weight), Number(s.reps))
       byDay.set(d, Math.max(byDay.get(d) || 0, e1))
     }

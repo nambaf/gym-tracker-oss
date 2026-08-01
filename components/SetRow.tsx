@@ -3,12 +3,14 @@ import { useEffect, useState, useMemo } from 'react'
 import { Minus, Plus, Lightbulb, Battery } from 'lucide-react'
 import { useT } from '@/lib/i18n/I18nProvider'
 import { INTENSITY_KEYS } from '@/lib/setNotes'
-import type { IntensityLevel, NextIntent } from '@/lib/models'
+import type { IntensityLevel, NextIntent, SetFlag } from '@/lib/models'
 import type { Prescription } from '@/lib/workout/prescription'
 
 const toNum = (s: string) => parseFloat(s.replace(',', '.'))
 
 const NEXT_ACTIONS: NextIntent['action'][] = ['hold', 'increase', 'decrease', 'retry']
+
+const SET_FLAGS: SetFlag[] = ['pain', 'technique', 'interrupted', 'fatigued']
 
 export function SetRow({
   onSave,
@@ -26,6 +28,7 @@ export function SetRow({
     intensity?: IntensityLevel
     comment?: string
     nextIntent?: NextIntent
+    flags?: SetFlag[]
   }) => Promise<boolean> | boolean | void
   lastSet?: any
   targetReps?: number
@@ -43,6 +46,7 @@ export function SetRow({
   const [showNote, setShowNote] = useState(false)
   const [nextAction, setNextAction] = useState<NextIntent['action'] | ''>('')
   const [nextWeight, setNextWeight] = useState('')
+  const [flags, setFlags] = useState<SetFlag[]>([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
@@ -106,6 +110,7 @@ export function SetRow({
                 : {}),
             }
           : undefined,
+        flags: flags.length ? flags : undefined,
       })
       if (ok === false) {
         setSaveError(t.setRow.saveFailed)
@@ -118,6 +123,7 @@ export function SetRow({
       setShowNote(false)
       setNextAction('')
       setNextWeight('')
+      setFlags([])
     } finally {
       setSaving(false)
     }
@@ -256,7 +262,7 @@ export function SetRow({
           onClick={() => {
             // Hiding the field used to leave the text in state, so a note the
             // athlete had visibly discarded was saved anyway.
-            if (showNote) { setCustomNote(''); setNextAction(''); setNextWeight('') }
+            if (showNote) { setCustomNote(''); setNextAction(''); setNextWeight(''); setFlags([]) }
             setShowNote(!showNote)
           }}
           className="text-xs text-muted hover:text-ink underline-offset-2 hover:underline"
@@ -273,6 +279,27 @@ export function SetRow({
             value={customNote}
             onChange={e => setCustomNote(e.target.value)}
           />
+
+          {/* Short, closed vocabulary for the context that explains a set —
+              pain, sloppy technique, an interruption, pre-existing fatigue.
+              These are the things worth filtering on later; everything else
+              stays free text. */}
+          <div className="space-y-1.5">
+            <div className="label">{t.setRow.flagsLabel}</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {SET_FLAGS.map(f => {
+                const active = flags.includes(f)
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setFlags(prev => active ? prev.filter(x => x !== f) : [...prev, f])}
+                    className={`chip ${active ? '!bg-ink !text-white' : 'hover:bg-paper-card'}`}
+                  >{t.setRow.flagOpts[f]}</button>
+                )
+              })}
+            </div>
+          </div>
 
           {/* Structured instruction to the athlete's future self. Free-text
               notes like "continue at 59" were rewritten every week because

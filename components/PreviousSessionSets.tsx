@@ -1,7 +1,7 @@
 'use client'
 import { useMemo } from 'react'
 import type { LoadState } from '@/lib/fetchJson'
-import type { SetEntry } from '@/lib/models'
+import type { SetEntry, SetFlag } from '@/lib/models'
 import { ArrowUp, ArrowDown, Minus, CornerUpRight } from 'lucide-react'
 import { useT } from '@/lib/i18n/I18nProvider'
 import { isFailureSet, formatSetNoteOf } from '@/lib/setNotes'
@@ -53,6 +53,15 @@ export default function PreviousSessionSets({ exerciseId, currentSessionId, curr
     return null
   }, [previousSets])
 
+  /** Distinct context flags recorded across the previous session. */
+  const flagSummary = useMemo(() => {
+    const out: SetFlag[] = []
+    for (const s of previousSets) {
+      for (const f of (s.flags || [])) if (!out.includes(f)) out.push(f)
+    }
+    return out
+  }, [previousSets])
+
   if (previousSets.length === 0) return null
 
   const prevDate = previousSets[0]?.ts ? new Date(previousSets[0].ts) : null
@@ -88,6 +97,14 @@ export default function PreviousSessionSets({ exerciseId, currentSessionId, curr
 
   return (
     <div className="space-y-2">
+      {flagSummary.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {flagSummary.map(f => (
+            <span key={f} className="chip !text-[10px] !py-0.5">{t.setRow.flagOpts[f]}</span>
+          ))}
+        </div>
+      )}
+
       {carryOver && (
         <div className="rounded-2xl bg-accent-50 text-accent-600 px-4 py-2.5 flex items-start gap-2">
           <CornerUpRight size={14} strokeWidth={2.4} className="mt-0.5 shrink-0" />

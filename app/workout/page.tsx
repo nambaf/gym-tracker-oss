@@ -12,7 +12,7 @@ import { useWakeLock } from '@/lib/useWakeLock'
 import { WorkoutTimer } from '@/components/WorkoutTimer'
 import { sortDays } from '@/lib/dayUtils'
 import DeloadBanner from '@/components/DeloadBanner'
-import { Plan, PlanRow, IntensityLevel, NextIntent } from '@/lib/models'
+import { Plan, PlanRow, IntensityLevel, NextIntent, SetFlag } from '@/lib/models'
 import { getRestPresetForExercise } from '@/lib/restTimerPresets'
 import { localDayKey } from '@/lib/dateUtils'
 import {
@@ -21,7 +21,8 @@ import {
 } from '@/lib/settings/defaults'
 import { parseRepTarget, repsForSet } from '@/lib/workout/repTarget'
 import { suggestNextLoad } from '@/lib/workout/prescription'
-import { Check, Plus, X, Search, CheckCircle2 } from 'lucide-react'
+import { detectPR, type PrResult } from '@/lib/records'
+import { Check, Plus, X, Search, CheckCircle2, Trophy } from 'lucide-react'
 import { useT } from '@/lib/i18n/I18nProvider'
 
 /** True when `isoDate` falls on the same local calendar day as `dayKey`. */
@@ -69,6 +70,12 @@ function todayCandidateNames(): string[] {
   ]
 }
 
+/** Human-readable size of a record improvement: kg for load PRs, reps otherwise. */
+function formatPrDelta(pr: { kind: string; delta: number }): string {
+  const n = Math.round(pr.delta * 10) / 10
+  return pr.kind === 'reps-at-weight' ? String(n) : `${n} kg`
+}
+
 /** Sets in the order they were performed. DynamoDB Scan order is arbitrary. */
 function byTimestamp(a: { ts?: string }, b: { ts?: string }): number {
   return String(a.ts || '').localeCompare(String(b.ts || ''))
@@ -89,7 +96,6 @@ type WorkoutExercise = {
 export default function WorkoutPage() {
   const t = useT()
   const [session, setSession] = useState<any | null>(null)
-  const [sets, setSets] = useState<any[]>([])
   const [planRows, setPlanRows] = useState<any[]>([])
   const [days, setDays] = useState<string[]>([])
   const [selectedDay, setSelectedDay] = useState<string>('')
@@ -102,6 +108,8 @@ export default function WorkoutPage() {
 
   const [lastSavedSetId, setLastSavedSetId] = useState<string | null>(null)
   const [restSignal, setRestSignal] = useState(0)
+  const [lastPr, setLastPr] = useState<PrResult | null>(null)
+  const prTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const carouselRef = useRef<HTMLDivElement>(null)
   // Holds the in-flight "find or create today's session" promise so two quick
@@ -216,12 +224,14 @@ export default function WorkoutPage() {
     setSession((prev: any) => existing || prev)
   }, [sessionsState])
 
-  useEffect(() => {
-    if (setsState.status === 'success' && session) {
-      setSets((setsState.data || [])
-        .filter((x: any) => x.sessionId === session.id)
-        .sort(byTimestamp))
-    }
+  // Single source of truth: today's sets are derived from the store, not copied
+  // into local state. The copy used to be overwritten whenever loadSets
+  // completed, which silently dropped a set that had just been added.
+  const sets = useMemo(() => {
+    if (setsState.status !== 'success' || !session?.id) return []
+    return (setsState.data || [])
+      .filter((x: any) => x.sessionId === session.id)
+      .sort(byTimestamp)
   }, [setsState, session])
 
   useEffect(() => {
@@ -289,6 +299,8 @@ export default function WorkoutPage() {
     manualSelectionRef.current = false
   }, [selectedDay])
 
+  useEffect(() => { setLastPr(null) }, [activeExIndex])
+
   useEffect(() => {
     if (!carouselRef.current) return
     const el = carouselRef.current.querySelector('[data-active="true"]') as HTMLElement | null
@@ -330,6 +342,7 @@ export default function WorkoutPage() {
       intensity?: IntensityLevel
       comment?: string
       nextIntent?: NextIntent
+      flags?: SetFlag[]
     }
   ): Promise<boolean> {
     const ex = workoutExercises[exIndex]
@@ -349,6 +362,7 @@ export default function WorkoutPage() {
         intensity: p.intensity,
         comment: p.comment || undefined,
         nextIntent: p.nextIntent,
+        flags: p.flags,
         setIndex: ex.completedSets.length + 1,
         schemaV: 2,
         // …while `note` keeps the legacy string shape so older builds, and the
@@ -361,15 +375,22 @@ export default function WorkoutPage() {
       if (!id) throw new Error('save set: missing id')
 
       const fullNewSet = { id, ...newSet }
-      setSets(prev => [...prev, fullNewSet].sort(byTimestamp))
-      addSetOptimistic(fullNewSet)
       const completedAfter = ex.completedSets.length + 1
-      setWorkoutExercises(prev => prev.map((e, i) =>
-        i === exIndex ? { ...e, completedSets: [...e.completedSets, fullNewSet].sort(byTimestamp) } : e
-      ))
+      addSetOptimistic(fullNewSet)
+      // `addSetOptimistic` is a no-op unless the slice already loaded; refetch so
+      // the set the athlete just saved cannot go missing from the screen.
+      if (setsState.status !== 'success') loadSets(true)
       setLastSavedSetId(id)
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
       savedTimerRef.current = setTimeout(() => setLastSavedSetId(null), 800)
+
+      // Tell the athlete they beat their own record while they are still at the
+      // rack. `currentExerciseHistory` excludes today, so the set just saved is
+      // compared only against previous sessions.
+      const pr = detectPR({ exerciseId: ex.id, weight: p.weight, reps: p.reps }, currentExerciseHistory as any)
+      setLastPr(pr)
+      if (prTimerRef.current) clearTimeout(prTimerRef.current)
+      if (pr) prTimerRef.current = setTimeout(() => setLastPr(null), 6000)
 
       if (autoStartRest) setRestSignal(n => n + 1)
 
@@ -395,7 +416,6 @@ export default function WorkoutPage() {
   }
 
   async function removeSet(setId: string) {
-    setSets(prev => prev.filter(s => s.id !== setId))
     removeSetOptimistic(setId)
     try { await fetch(`/api/data/sets/${setId}`, { method: 'DELETE' }) }
     catch (e) { console.error('Failed to delete set:', e) }
@@ -466,11 +486,11 @@ export default function WorkoutPage() {
           </select>
         ) : <span className="eyebrow">{t.workout.eyebrowDay}</span>}
 
-        {session?.startTime ? (
-          <WorkoutTimer startTime={session.startTime} onStart={startWorkout} />
-        ) : (
-          <span className="eyebrow">{t.workout.eyebrowReady}</span>
-        )}
+        {/* Always mounted: when there is no startTime the component renders its
+            own Start button. Gating the mount on `startTime` meant the button
+            could never appear and `startWorkout` was unreachable — the timer
+            only ever began as a side effect of saving the first set. */}
+        <WorkoutTimer startTime={session?.startTime ?? null} onStart={startWorkout} />
       </header>
 
       {/* Hero: progress + exercise carousel */}
@@ -602,6 +622,18 @@ export default function WorkoutPage() {
             />
           </div>
 
+          {lastPr && (
+            <div className="rounded-2xl bg-success/10 text-success px-4 py-3 flex items-center gap-2">
+              <Trophy size={16} strokeWidth={2.2} className="shrink-0" />
+              <span className="text-[13px] font-medium">
+                {t.workout.prTitle}{' '}
+                <span className="font-normal opacity-90">
+                  {t.workout.prKind[lastPr.kind].replace('{delta}', formatPrDelta(lastPr))}
+                </span>
+              </span>
+            </div>
+          )}
+
           {activeEx.completedSets.length > 0 && (
             <div className="space-y-2">
               <div className="label">{t.workout.setsToday}</div>
@@ -627,6 +659,13 @@ export default function WorkoutPage() {
                         </div>
                         {noteText && (
                           <div className="text-[11px] text-ink-soft italic mt-1 break-words">{noteText}</div>
+                        )}
+                        {Array.isArray(s.flags) && s.flags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {s.flags.map((f: SetFlag) => (
+                              <span key={f} className="chip !text-[10px] !py-0.5">{t.setRow.flagOpts[f]}</span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </SwipeableSetRow>
