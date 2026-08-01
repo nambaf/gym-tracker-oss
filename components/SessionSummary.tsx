@@ -1,12 +1,12 @@
 "use client"
 import { useMemo } from 'react'
+import { isFailureSet } from '@/lib/setNotes'
 import { epley1RM } from '@/lib/progress'
 import { parsePrimaryMuscleNames } from '@/lib/bodyMapUtils'
 import type { LoadState } from '@/lib/fetchJson'
 import type { Exercise } from '@/lib/models'
 import { useT } from '@/lib/i18n/I18nProvider'
 
-const FAILURE_TAG = 'cedimento'
 
 type SetRow = { sessionId: string; exerciseId: string; weight: string | number; reps: string | number; rpe?: string | number; note?: string }
 
@@ -46,7 +46,7 @@ export default function SessionSummary({
       vol += w * r
       totalSetCount++
 
-      const isFailure = s.rpe === 10 || (typeof s.note === 'string' && s.note.includes(FAILURE_TAG))
+      const isFailure = isFailureSet(s)
       if (isFailure) failureCount++
 
       if (e1) { intSum += (w / e1); intCount++ }

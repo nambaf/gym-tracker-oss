@@ -78,13 +78,16 @@ export async function fetchJSON<T = unknown>(
     return state
   } catch (e: any) {
     clearTimeout(t)
-    if (e?.name === 'AbortError') return { status: 'idle' }
 
     const now = performance.now()
+    // A timeout must surface as an error, not as `idle` returned without ever
+    // calling `onUpdate`: `createLoader` only observes `onUpdate`, so a silent
+    // abort leaves the slice stuck on 'loading' and its own guard then refuses
+    // every retry. On a flaky mobile connection that is unrecoverable.
     state = {
       ...state,
       status: 'error',
-      error: e?.message || 'Unknown error',
+      error: e?.name === 'AbortError' ? 'timeout' : (e?.message || 'Unknown error'),
       endedAt: now,
       durationMs: now - startedAt,
       progress: 100,

@@ -2,6 +2,7 @@ import 'server-only'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, ScanCommand, PutCommand, BatchWriteCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import type { DataStore } from './dataStore'
+import { normalizeRow, normalizeRows } from './normalize'
 
 /**
  * Logical table name → suffix of the `DYNAMO_TABLE_*` env var.
@@ -48,6 +49,15 @@ if (process.env.DYNAMODB_ACCESS_KEY && process.env.DYNAMODB_SECRET_KEY) {
     sessionToken: process.env.DYNAMODB_SESSION_TOKEN,
   }
 }
+// CUSTOMIZE: point at a local DynamoDB (e.g. `amazon/dynamodb-local` on
+// http://localhost:8000) to develop and test without touching the real tables.
+// Leave unset everywhere except local development.
+if (process.env.DYNAMO_ENDPOINT) {
+  clientConfig.endpoint = process.env.DYNAMO_ENDPOINT
+  clientConfig.credentials = clientConfig.credentials || {
+    accessKeyId: 'local', secretAccessKey: 'local',
+  }
+}
 const client = DynamoDBDocumentClient.from(new DynamoDBClient(clientConfig))
 
 function generateId(): string {
@@ -62,10 +72,23 @@ async function readTable<T = any>(table: string): Promise<T[]> {
 
   const name = tableName(table)
   try {
-    const res = await client.send(new ScanCommand({ TableName: name, ConsistentRead: true }))
-    const result = (res.Items ?? []) as T[]
-    setCache(table, result as any[])
-    return result
+    // A single Scan returns at most 1 MB. Without following LastEvaluatedKey the
+    // history silently truncates once the table outgrows one page, and every
+    // aggregate downstream (weekly volume, e1RM max, PR detection) starts
+    // reporting a decline the athlete never lived.
+    const result: T[] = []
+    let exclusiveStartKey: Record<string, any> | undefined
+    do {
+      const res = await client.send(new ScanCommand({
+        TableName: name,
+        ExclusiveStartKey: exclusiveStartKey,
+      }))
+      for (const item of res.Items ?? []) result.push(item as T)
+      exclusiveStartKey = res.LastEvaluatedKey
+    } while (exclusiveStartKey)
+    const normalized = normalizeRows(table, result)
+    setCache(table, normalized as any[])
+    return normalized
   } catch (error) {
     console.error(`DynamoDB scan failed: ${name}`, {
       name: error instanceof Error ? error.name : 'Unknown',
@@ -79,18 +102,20 @@ async function readTable<T = any>(table: string): Promise<T[]> {
 
 async function getRow<T = any>(table: string, id: string): Promise<T | null> {
   const res = await client.send(new GetCommand({ TableName: tableName(table), Key: { id } }))
-  return (res.Item ?? null) as T | null
+  return res.Item ? (normalizeRow(table, res.Item) as T) : null
 }
 
 async function appendRow(table: string, row: Record<string, any>) {
   if (!row.id) row.id = generateId()
-  await client.send(new PutCommand({ TableName: tableName(table), Item: row }))
+  // Normalise on write too, so the table stops accumulating new rows in the
+  // mixed String/Number shape the legacy data already suffers from.
+  await client.send(new PutCommand({ TableName: tableName(table), Item: normalizeRow(table, row) }))
   const { invalidate } = await import('./dataCache')
   invalidate(table)
 }
 
 async function updateRow(table: string, id: string, row: Record<string, any>) {
-  await client.send(new PutCommand({ TableName: tableName(table), Item: { ...row, id } }))
+  await client.send(new PutCommand({ TableName: tableName(table), Item: normalizeRow(table, { ...row, id }) }))
   const { invalidate } = await import('./dataCache')
   invalidate(table)
 }

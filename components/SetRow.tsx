@@ -1,11 +1,14 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
-import { epley1RM } from '@/lib/progress'
 import { Minus, Plus, Lightbulb, Battery } from 'lucide-react'
 import { useT } from '@/lib/i18n/I18nProvider'
-import { FAILURE_TAG, INTENSITY_KEYS } from '@/lib/setNotes'
+import { INTENSITY_KEYS } from '@/lib/setNotes'
+import type { IntensityLevel, NextIntent } from '@/lib/models'
+import type { Prescription } from '@/lib/workout/prescription'
 
 const toNum = (s: string) => parseFloat(s.replace(',', '.'))
+
+const NEXT_ACTIONS: NextIntent['action'][] = ['hold', 'increase', 'decrease', 'retry']
 
 export function SetRow({
   onSave,
@@ -14,31 +17,43 @@ export function SetRow({
   exerciseHistory,
   targetRpe,
   isDeload,
+  prescription,
 }: {
-  onSave: (p: { weight: number; reps: number; toFailure?: boolean; note?: string }) => void
+  onSave: (p: {
+    weight: number
+    reps: number
+    toFailure?: boolean
+    intensity?: IntensityLevel
+    comment?: string
+    nextIntent?: NextIntent
+  }) => Promise<boolean> | boolean | void
   lastSet?: any
   targetReps?: number
   exerciseHistory?: any[]
   targetRpe?: number
   isDeload?: boolean
+  prescription?: Prescription | null
 }) {
   const t = useT()
   const [weightStr, setWeightStr] = useState('')
   const [repsStr, setRepsStr] = useState('')
   const [toFailure, setToFailure] = useState(false)
-  const [intensityTag, setIntensityTag] = useState('')
+  const [intensity, setIntensity] = useState<IntensityLevel | undefined>(undefined)
   const [customNote, setCustomNote] = useState('')
   const [showNote, setShowNote] = useState(false)
+  const [nextAction, setNextAction] = useState<NextIntent['action'] | ''>('')
+  const [nextWeight, setNextWeight] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
+  // Prefill carries over weight and reps only. `toFailure` and the intensity tag
+  // describe one specific set: restoring them here re-armed the toggle after
+  // every save (the effect re-runs because `lastSet` changes), so every set
+  // after the first failure was silently stored as a failure too.
   useEffect(() => {
     if (lastSet) {
-      setWeightStr(String(lastSet.weight || ''))
+      setWeightStr(String(lastSet.weight ?? ''))
       setRepsStr(String(targetReps || lastSet.reps || ''))
-      setToFailure(lastSet.note?.includes(FAILURE_TAG) || lastSet.rpe === 10)
-      if (lastSet.note) {
-        const found = INTENSITY_KEYS.find(i => lastSet.note.includes(i.tag))
-        if (found) setIntensityTag(found.tag)
-      }
     } else if (targetReps) {
       setRepsStr(String(targetReps))
     }
@@ -62,32 +77,50 @@ export function SetRow({
     return sorted
   }, [exerciseHistory, lastSet])
 
-  const recommendedWeight = useMemo(() => {
-    if (!exerciseHistory || exerciseHistory.length === 0 || !targetReps) return null
-    const recent = exerciseHistory.slice(0, 5)
-    const e1rms = recent.map((s: any) => epley1RM(Number(s.weight), Number(s.reps))).filter(e => e > 0)
-    if (e1rms.length === 0) return null
-    const avgE1 = e1rms.reduce((a, b) => a + b, 0) / e1rms.length
-    const rpeIntensity: Record<number, number> = {
-      10: 1.00, 9.5: 0.98, 9: 0.96, 8.5: 0.94, 8: 0.92,
-      7.5: 0.89, 7: 0.86, 6.5: 0.84, 6: 0.82, 5.5: 0.79, 5: 0.77,
-    }
-    const intensityFactor = targetRpe ? (rpeIntensity[targetRpe] || 0.85) : 0.85
-    const rec = avgE1 * intensityFactor / (1 + targetReps / 30)
-    return Math.round(rec / 2.5) * 2.5
-  }, [exerciseHistory, targetReps, targetRpe])
 
-  function save() {
-    const w = toNum(weightStr), r = toNum(repsStr)
-    if (!w || !r) return
-    let combinedNote = intensityTag || customNote || ''
-    if (intensityTag && customNote) combinedNote = `${intensityTag} - ${customNote}`
-    onSave({ weight: w, reps: Math.round(r), toFailure, note: combinedNote })
-    setRepsStr(String(targetReps || ''))
-    setToFailure(false)
-    setIntensityTag('')
-    setCustomNote('')
-    setShowNote(false)
+  // Bodyweight work is logged at 0 kg, so 0 is a valid weight — only a missing
+  // or negative value is invalid. Reps must still be at least 1.
+  const w = toNum(weightStr)
+  const r = toNum(repsStr)
+  const canSave = Number.isFinite(w) && w >= 0 && Number.isFinite(r) && Math.round(r) >= 1
+
+  async function save() {
+    if (!canSave || saving) return
+    setSaving(true)
+    setSaveError('')
+    try {
+      // Clear the form only once the set is actually persisted. Resetting first
+      // made a failed save look identical to a successful one, and the set was
+      // gone with no way to recover what had just been typed.
+      const ok = await onSave({
+        weight: w,
+        reps: Math.round(r),
+        toFailure,
+        intensity,
+        comment: customNote.trim(),
+        nextIntent: nextAction
+          ? {
+              action: nextAction,
+              ...(Number.isFinite(toNum(nextWeight)) && toNum(nextWeight) > 0
+                ? { weight: toNum(nextWeight) }
+                : {}),
+            }
+          : undefined,
+      })
+      if (ok === false) {
+        setSaveError(t.setRow.saveFailed)
+        return
+      }
+      setRepsStr(String(targetReps || ''))
+      setToFailure(false)
+      setIntensity(undefined)
+      setCustomNote('')
+      setShowNote(false)
+      setNextAction('')
+      setNextWeight('')
+    } finally {
+      setSaving(false)
+    }
   }
 
   function adjustWeight(d: number) {
@@ -99,10 +132,10 @@ export function SetRow({
 
   return (
     <div className="space-y-4">
-      {recommendedWeight && (
+      {prescription && (
         <button
           type="button"
-          onClick={() => setWeightStr(String(recommendedWeight))}
+          onClick={() => setWeightStr(String(prescription.weight))}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-xs
             ${isDeload
               ? 'bg-warning/10 text-warning'
@@ -112,10 +145,12 @@ export function SetRow({
             ? <Battery size={13} strokeWidth={2} />
             : <Lightbulb size={13} strokeWidth={2} />}
           <span>
-            {t.setRow.recommendedFor} {targetReps} {t.setRow.repsSuffix}
-            {targetRpe && ` @ ${t.setRow.rpeSuffix} ${targetRpe}`}:{' '}
-            <strong className="num">{recommendedWeight} kg</strong>
-            {isDeload && <span className="ml-1 opacity-70">{t.setRow.deloadSuffix}</span>}
+            <strong className="num">{prescription.weight} kg</strong>
+            {' × '}<span className="num">{prescription.targetReps}</span>
+            {' — '}
+            {t.setRow.prescriptionReason[prescription.reason].replace(
+              '{prev}', String(prescription.previousWeight ?? '')
+            )}
           </span>
         </button>
       )}
@@ -129,7 +164,7 @@ export function SetRow({
               inputMode="decimal"
               value={weightStr}
               onChange={e => setWeightStr(e.target.value)}
-              placeholder={recommendedWeight ? String(recommendedWeight) : '—'}
+              placeholder={prescription ? String(prescription.weight) : '—'}
             />
             <span className="text-sm text-muted ml-1">kg</span>
           </div>
@@ -193,12 +228,12 @@ export function SetRow({
         <div className="label">{t.setRow.intensityLabel}</div>
         <div className="flex gap-1.5 flex-wrap">
           {INTENSITY_KEYS.map(opt => {
-            const active = intensityTag === opt.tag
+            const active = intensity === opt.level
             return (
               <button
-                key={opt.tag}
+                key={opt.level}
                 type="button"
-                onClick={() => setIntensityTag(active ? '' : opt.tag)}
+                onClick={() => setIntensity(active ? undefined : opt.level)}
                 className={`chip ${active
                   ? '!bg-ink !text-white'
                   : 'hover:bg-paper-card'}`}
@@ -218,7 +253,12 @@ export function SetRow({
         </button>
         <button
           type="button"
-          onClick={() => setShowNote(!showNote)}
+          onClick={() => {
+            // Hiding the field used to leave the text in state, so a note the
+            // athlete had visibly discarded was saved anyway.
+            if (showNote) { setCustomNote(''); setNextAction(''); setNextWeight('') }
+            setShowNote(!showNote)
+          }}
           className="text-xs text-muted hover:text-ink underline-offset-2 hover:underline"
         >
           {showNote ? t.setRow.hideNote : t.setRow.addNote}
@@ -226,22 +266,66 @@ export function SetRow({
       </div>
 
       {showNote && (
-        <input
-          className="input"
-          placeholder={t.setRow.notePlaceholder}
-          value={customNote}
-          onChange={e => setCustomNote(e.target.value)}
-        />
+        <div className="space-y-3">
+          <input
+            className="input"
+            placeholder={t.setRow.notePlaceholder}
+            value={customNote}
+            onChange={e => setCustomNote(e.target.value)}
+          />
+
+          {/* Structured instruction to the athlete's future self. Free-text
+              notes like "continue at 59" were rewritten every week because
+              nothing carried them into the next session. */}
+          <div className="space-y-1.5">
+            <div className="label">{t.setRow.nextTimeLabel}</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {NEXT_ACTIONS.map(a => {
+                const active = nextAction === a
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => { setNextAction(active ? '' : a); if (active) setNextWeight('') }}
+                    className={`chip ${active ? '!bg-ink !text-white' : 'hover:bg-paper-card'}`}
+                  >{t.setRow.nextTimeOpts[a]}</button>
+                )
+              })}
+            </div>
+            {(nextAction === 'increase' || nextAction === 'decrease') && (
+              <input
+                className="input mt-1.5"
+                inputMode="decimal"
+                placeholder={t.setRow.nextTimeWeightPlaceholder}
+                value={nextWeight}
+                onChange={e => setNextWeight(e.target.value)}
+              />
+            )}
+          </div>
+        </div>
       )}
 
       <button
         onClick={save}
-        disabled={!weightStr || !repsStr}
+        disabled={!canSave || saving}
         className="btn-accent w-full py-4 rounded-full text-[15px] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {t.setRow.saveBtn}
-        {toFailure && <span className="opacity-90"> {t.setRow.saveBtnFailureSuffix}</span>}
+        {saving ? (
+          <>
+            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            {t.setRow.saving}
+          </>
+        ) : (
+          <>
+            {t.setRow.saveBtn}
+            {toFailure && <span className="opacity-90"> {t.setRow.saveBtnFailureSuffix}</span>}
+          </>
+        )}
       </button>
+
+      {saveError && (
+        <div className="text-xs text-danger text-center" role="alert">{saveError}</div>
+      )}
 
       {lastSet && (
         <div className="text-xs text-muted text-center">

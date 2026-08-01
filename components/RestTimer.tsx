@@ -10,9 +10,15 @@ interface TimerState { endTime: number | null; targetSec: number }
 interface RestTimerProps {
   defaultSec?: number
   suggestedLabel?: string
+  /**
+   * Increment to start the timer from outside — the workout page bumps it on
+   * every saved set. A counter rather than a boolean so two sets in a row both
+   * restart the countdown.
+   */
+  startSignal?: number
 }
 
-export function RestTimer({ defaultSec = 90, suggestedLabel }: RestTimerProps) {
+export function RestTimer({ defaultSec = 90, suggestedLabel, startSignal = 0 }: RestTimerProps) {
   const t = useT()
   const [sec, setSec] = useState(0)
   const [running, setRunning] = useState(false)
@@ -74,6 +80,16 @@ export function RestTimer({ defaultSec = 90, suggestedLabel }: RestTimerProps) {
     notificationShownRef.current = false
   }
   function stop() { setRunning(false); setEndTime(null); setSec(0) }
+
+  const startSignalRef = useRef(startSignal)
+  useEffect(() => {
+    if (startSignal === startSignalRef.current) return
+    startSignalRef.current = startSignal
+    if (startSignal > 0) start(defaultSec)
+    // `start` is stable enough for this purpose and adding it would re-fire on
+    // every render; the signal counter is the only trigger that matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startSignal, defaultSec])
 
   const mm = String(Math.floor(sec / 60)).padStart(2, '0')
   const ss = String(sec % 60).padStart(2, '0')

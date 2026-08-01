@@ -2,6 +2,9 @@
 import Link from 'next/link'
 import { useEffect, useState, useMemo } from 'react'
 import { epley1RM } from '@/lib/progress'
+import { buildExerciseBests, relativeIntensity } from '@/lib/records'
+import { weekBounds, parseLocalDate, localDayKey } from '@/lib/dateUtils'
+import { DEFAULT_MAX_HISTORY_MONTHS } from '@/lib/settings/defaults'
 import { useDataStore } from '@/store/data'
 import { VolumeChart } from '@/components/VolumeChart'
 import { IntensityChart } from '@/components/IntensityChart'
@@ -22,33 +25,34 @@ type DateRange = { start: Date; end: Date; label: string }
 
 const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
 
-function getWeekBounds(date: Date): { monday: Date; sunday: Date } {
-  const d = new Date(date)
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  const monday = new Date(d.setDate(diff))
-  monday.setHours(0, 0, 0, 0)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  sunday.setHours(23, 59, 59, 999)
-  return { monday, sunday }
+/**
+ * `n` months back, clamped to the end of the target month. Plain
+ * `setMonth(getMonth() - n)` overflows: on 31 March, minus one month lands on
+ * 3 March, silently shortening the window.
+ */
+function monthsAgo(from: Date, n: number): Date {
+  const d = new Date(from)
+  const day = d.getDate()
+  d.setDate(1)
+  d.setMonth(d.getMonth() - n)
+  const lastDayOfTarget = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  d.setDate(Math.min(day, lastDayOfTarget))
+  return d
 }
 
 function generatePeriodOptions(t: Dictionary): DateRange[] {
   const now = new Date()
   const opts: DateRange[] = []
-  const { monday: thisMonday, sunday: thisSunday } = getWeekBounds(now)
+  const { monday: thisMonday, sunday: thisSunday } = weekBounds(now)
   opts.push({ start: thisMonday, end: thisSunday, label: t.history.periodThisWeek })
-  const { monday: lastMonday, sunday: lastSunday } = getWeekBounds(
+  const { monday: lastMonday, sunday: lastSunday } = weekBounds(
     new Date(thisMonday.getTime() - 7 * 24 * 60 * 60 * 1000)
   )
   opts.push({ start: lastMonday, end: lastSunday, label: t.history.periodLastWeek })
   const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(now.getDate() - 30)
   opts.push({ start: thirtyDaysAgo, end: now, label: t.history.periodLast30 })
-  const threeMonthsAgo = new Date(now); threeMonthsAgo.setMonth(now.getMonth() - 3)
-  opts.push({ start: threeMonthsAgo, end: now, label: t.history.periodLast3m })
-  const sixMonthsAgo = new Date(now); sixMonthsAgo.setMonth(now.getMonth() - 6)
-  opts.push({ start: sixMonthsAgo, end: now, label: t.history.periodLast6m })
+  opts.push({ start: monthsAgo(now, 3), end: now, label: t.history.periodLast3m })
+  opts.push({ start: monthsAgo(now, 6), end: now, label: t.history.periodLast6m })
   return opts
 }
 
@@ -65,15 +69,24 @@ export default function HistoryPage() {
   const lang = useLang()
   const {
     sessions: sessionsState, sets: setsState, exercises: exercisesState,
-    plan: planState, loadAll, trainingMode,
+    plan: planState, loadAll, trainingMode, storedSettings,
   } = useDataStore()
+
+  const maxHistoryMonths = storedSettings.maxHistoryMonths ?? DEFAULT_MAX_HISTORY_MONTHS
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  const loading =
+  const hasError =
+    sessionsState.status === 'error' ||
+    setsState.status === 'error' ||
+    exercisesState.status === 'error'
+  // 'error' used to satisfy `!== 'success'` too, so an expired token left the
+  // page on its skeleton forever with no way to retry.
+  const loading = !hasError && (
     sessionsState.status !== 'success' ||
     setsState.status !== 'success' ||
     exercisesState.status !== 'success'
+  )
 
   const [selectedPeriod, setSelectedPeriod] = useState<DateRange | null>(null)
   const [selectedChartPeriod, setSelectedChartPeriod] = useState<Period>('week')
@@ -107,7 +120,7 @@ export default function HistoryPage() {
 
   const muscleVolumeData = useMemo(() => {
     if (sessionsState.status !== 'success' || setsState.status !== 'success' || exercisesState.status !== 'success') return []
-    const { monday, sunday } = getWeekBounds(new Date())
+    const { monday, sunday } = weekBounds(new Date())
     return getWeeklyVolumeByMuscle(sessionsState.data || [], setsState.data || [], exercisesState.data || [], monday, sunday)
   }, [sessionsState, setsState, exercisesState])
 
@@ -122,49 +135,82 @@ export default function HistoryPage() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [sessionsState.data, selectedPeriod])
 
-  const exToPlanDay = useMemo(() => {
-    const map = new Map<string, string>()
+  /**
+   * exerciseId -> every plan day that contains it. The old map kept only the
+   * first day seen, so on an A/B split the second day never won a vote and
+   * every session was labelled with the first.
+   */
+  const exToPlanDays = useMemo(() => {
+    const map = new Map<string, Set<string>>()
     if (planState.status !== 'success') return map
     ;(planState.data || []).forEach((r: PlanRow) => {
-      if (r.exerciseId && r.day && !map.has(r.exerciseId)) {
-        map.set(r.exerciseId, String(r.day))
-      }
+      if (!r.exerciseId || !r.day) return
+      const key = String(r.day)
+      const cur = map.get(r.exerciseId)
+      if (cur) cur.add(key)
+      else map.set(r.exerciseId, new Set([key]))
     })
     return map
   }, [planState])
+
+  /** Best e1RM per exercise across the whole history, for relative intensity. */
+  const exerciseBests = useMemo(
+    () => buildExerciseBests(setsState.data || []),
+    [setsState.data]
+  )
 
   const sessionsWithStats = useMemo(() => {
     const currentSets = setsState.data || []
     const exercisesList = exercisesState.data || []
     return filteredSessions
       .map(session => {
-        const sessionSets = currentSets.filter(s => s.sessionId === session.id)
+        // Scan order is arbitrary; sort so "first exercise" and set numbering
+        // reflect the order the work was actually done in.
+        const sessionSets = currentSets
+          .filter(s => s.sessionId === session.id)
+          .sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')))
         if (sessionSets.length === 0) return null
         let volume = 0, intensitySum = 0, intensityCount = 0
-        const exerciseMap = new Map<string, { name: string; sets: any[] }>()
-        const dayHits = new Map<string, number>()
+        const exerciseMap = new Map<string, { id: string; name: string; sets: any[]; topSet: any }>()
+        const dayVotes = new Map<string, Set<string>>()
         sessionSets.forEach(set => {
           const w = Number(set.weight), r = Number(set.reps)
-          if (w && r) {
-            volume += w * r
-            const e1 = epley1RM(w, r)
-            if (e1) { intensitySum += (w / e1); intensityCount++ }
-          }
+          if (Number.isFinite(w) && Number.isFinite(r) && r > 0) volume += w * r
+          const rel = relativeIntensity(set, exerciseBests)
+          if (rel !== null) { intensitySum += rel; intensityCount++ }
+
           const exName = exerciseNames.get(set.exerciseId) || set.exerciseId
-          if (!exerciseMap.has(set.exerciseId)) {
-            exerciseMap.set(set.exerciseId, { name: exName, sets: [] })
+          let entry = exerciseMap.get(set.exerciseId)
+          if (!entry) {
+            entry = { id: set.exerciseId, name: exName, sets: [], topSet: set }
+            exerciseMap.set(set.exerciseId, entry)
           }
-          exerciseMap.get(set.exerciseId)!.sets.push(set)
-          const planDay = exToPlanDay.get(set.exerciseId)
-          if (planDay) dayHits.set(planDay, (dayHits.get(planDay) || 0) + 1)
+          entry.sets.push(set)
+          // The chip is labelled "top set", so show the heaviest effort rather
+          // than whichever set the database happened to return first — usually
+          // a warm-up.
+          if (epley1RM(w, r) > epley1RM(Number(entry.topSet.weight), Number(entry.topSet.reps))) {
+            entry.topSet = set
+          }
+
+          for (const day of exToPlanDays.get(set.exerciseId) || []) {
+            const seen = dayVotes.get(day)
+            if (seen) seen.add(set.exerciseId)
+            else dayVotes.set(day, new Set([set.exerciseId]))
+          }
         })
-        const planDay = Array.from(dayHits.entries())
-          .sort((a, b) => b[1] - a[1])[0]?.[0] || null
+        // Vote by distinct exercises matched, not by set count: an eight-set
+        // session on one exercise used to outvote four exercises of the day
+        // actually being trained.
+        const ranked = Array.from(dayVotes.entries()).sort((a, b) => b[1].size - a[1].size)
+        const planDay = ranked.length && (ranked.length === 1 || ranked[0][1].size > ranked[1][1].size)
+          ? ranked[0][0]
+          : null
         const muscleData = calculateSessionMuscleStatus(sessionSets, exercisesList)
         return {
           ...session,
           volume: Math.round(volume),
-          avgIntensity: intensityCount ? Math.round((intensitySum / intensityCount) * 100) : null,
+          avgIntensity: intensityCount ? Math.round(intensitySum / intensityCount) : null,
           totalSets: sessionSets.length,
           exercises: Array.from(exerciseMap.values()),
           muscleData,
@@ -172,17 +218,30 @@ export default function HistoryPage() {
         }
       })
       .filter((session): session is NonNullable<typeof session> => session !== null)
-  }, [filteredSessions, setsState.data, exerciseNames, exercisesState.data, exToPlanDay])
+  }, [filteredSessions, setsState.data, exerciseNames, exercisesState.data, exToPlanDays, exerciseBests])
+
+  const [customError, setCustomError] = useState('')
 
   function handleCustomPeriod() {
+    setCustomError('')
     if (!customStart || !customEnd) return
-    const start = new Date(customStart)
-    const end = new Date(customEnd)
-    end.setHours(23, 59, 59, 999)
-    const sixMonthsAgo = new Date()
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-    if (start < sixMonthsAgo) {
-      alert(t.history.maxRangeAlert)
+    // `new Date('2026-07-01')` parses as UTC midnight, which is the previous
+    // day west of Greenwich and 02:00 local in Rome — either way the range
+    // silently missed sessions at its edges.
+    let start = parseLocalDate(customStart)
+    let end = parseLocalDate(customEnd, true)
+    if (!start || !end) { setCustomError(t.history.invalidRange); return }
+    // Accept an inverted range instead of showing an empty list.
+    if (start > end) {
+      const swapped = parseLocalDate(customEnd)
+      const swappedEnd = parseLocalDate(customStart, true)
+      if (!swapped || !swappedEnd) { setCustomError(t.history.invalidRange); return }
+      start = swapped
+      end = swappedEnd
+    }
+    const earliest = monthsAgo(new Date(), maxHistoryMonths)
+    if (start < earliest) {
+      setCustomError(t.history.maxRangeAlert.replace('{n}', String(maxHistoryMonths)))
       return
     }
     setSelectedPeriod({
@@ -190,6 +249,18 @@ export default function HistoryPage() {
       label: `${start.toLocaleDateString(LOCALE[lang])} - ${end.toLocaleDateString(LOCALE[lang])}`,
     })
     setShowCustom(false)
+  }
+
+  if (hasError) {
+    return (
+      <div className="space-y-4">
+        <h1 className="display text-4xl">{t.history.eyebrow}</h1>
+        <div className="card p-8 text-center space-y-3">
+          <div className="text-muted">{t.history.errorLoad}</div>
+          <button className="btn-primary" onClick={() => loadAll(true)}>{t.common.retry}</button>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
@@ -254,12 +325,21 @@ export default function HistoryPage() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input type="date" className="input flex-1" value={customStart}
-              onChange={e => setCustomStart(e.target.value)} max={new Date().toISOString().split('T')[0]} />
-            <input type="date" className="input flex-1" value={customEnd}
-              onChange={e => setCustomEnd(e.target.value)} max={new Date().toISOString().split('T')[0]} />
-            <button className="btn-primary" onClick={handleCustomPeriod}>{t.history.periodApply}</button>
+          <div className="space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input type="date" className="input flex-1" value={customStart}
+                onChange={e => setCustomStart(e.target.value)}
+                min={localDayKey(monthsAgo(new Date(), maxHistoryMonths))}
+                max={localDayKey()} />
+              <input type="date" className="input flex-1" value={customEnd}
+                onChange={e => setCustomEnd(e.target.value)}
+                min={localDayKey(monthsAgo(new Date(), maxHistoryMonths))}
+                max={localDayKey()} />
+              <button className="btn-primary" onClick={handleCustomPeriod}>{t.history.periodApply}</button>
+            </div>
+            {customError && (
+              <div className="text-xs text-danger" role="alert">{customError}</div>
+            )}
           </div>
         )}
 
@@ -318,7 +398,7 @@ export default function HistoryPage() {
                         <span><span className="text-ink font-semibold num mr-0.5">{session.volume.toLocaleString(LOCALE[lang])}</span>kg·rep</span>
                         <span><span className="text-ink font-semibold num mr-0.5">{session.totalSets}</span>{t.history.setsSuffix}</span>
                         {session.avgIntensity != null && (
-                          <span><span className="text-ink font-semibold num mr-0.5">{session.avgIntensity}%</span>{t.history.rpeSuffix}</span>
+                          <span><span className="text-ink font-semibold num mr-0.5">{session.avgIntensity}%</span>{t.history.intensitySuffix}</span>
                         )}
                       </div>
                     </div>
@@ -331,23 +411,20 @@ export default function HistoryPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 mt-3">
-                    {session.exercises.slice(0, 4).map((exercise: any) => {
-                      const topSet = exercise.sets[0]
-                      return (
-                        <Link
-                          key={exercise.name}
-                          href={`/exercise/${topSet?.exerciseId}`}
-                          className="chip hover:bg-paper-card transition-colors"
-                        >
-                          {exercise.name}
-                          {topSet && (
-                            <span className="text-muted ml-1 font-normal">
-                              {topSet.weight}×{topSet.reps}
-                            </span>
-                          )}
-                        </Link>
-                      )
-                    })}
+                    {session.exercises.slice(0, 4).map((exercise: any) => (
+                      <Link
+                        key={exercise.id}
+                        href={`/exercise/${exercise.id}`}
+                        className="chip hover:bg-paper-card transition-colors"
+                      >
+                        {exercise.name}
+                        {exercise.topSet && (
+                          <span className="text-muted ml-1 font-normal">
+                            {exercise.topSet.weight}×{exercise.topSet.reps}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
                     {session.exercises.length > 4 && (
                       <span className="chip">{t.history.morePrefix}{session.exercises.length - 4} {t.history.morePlural}</span>
                     )}

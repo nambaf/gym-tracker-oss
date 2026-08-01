@@ -23,6 +23,15 @@ export function IntensityChart({ dailyData, period }: IntensityChartProps) {
 
   const days = period === 'week' ? 7 : 30
 
+  /** Mean over the days that actually carry a value, ignoring the gaps. */
+  function meanOf(pick: (d: DailyIntensityData) => number | null): number | null {
+    const vals = dailyData.map(pick).filter((v): v is number => v !== null)
+    if (vals.length === 0) return null
+    return vals.reduce((a, b) => a + b, 0) / vals.length
+  }
+  const avgRpe = meanOf(d => d.avgRPE)
+  const avgIntensity = meanOf(d => d.avgIntensity)
+
   return (
     <div className="card p-6">
       <h3 className="text-lg font-semibold mb-2">{t.intensityChart.title}</h3>
@@ -66,20 +75,21 @@ export function IntensityChart({ dailyData, period }: IntensityChartProps) {
               return value
             }}
           />
-          <Line yAxisId="left" type="monotone" dataKey="avgRPE" stroke="#d6492a" strokeWidth={2} dot={{ r: 4, fill: '#d6492a' }} activeDot={{ r: 6 }} />
-          <Line yAxisId="right" type="monotone" dataKey="avgIntensity" stroke="#1a1916" strokeWidth={2} dot={{ r: 4, fill: '#1a1916' }} activeDot={{ r: 6 }} />
+          {/* connectNulls: a day without RPE is a gap in the line, not a zero. */}
+          <Line yAxisId="left" type="monotone" dataKey="avgRPE" connectNulls stroke="#d6492a" strokeWidth={2} dot={{ r: 4, fill: '#d6492a' }} activeDot={{ r: 6 }} />
+          <Line yAxisId="right" type="monotone" dataKey="avgIntensity" connectNulls stroke="#1a1916" strokeWidth={2} dot={{ r: 4, fill: '#1a1916' }} activeDot={{ r: 6 }} />
         </LineChart>
       </ResponsiveContainer>
 
       <div className="mt-4 flex gap-4 justify-center text-sm text-muted">
         <div>
           {t.intensityChart.statRpe} <span className="font-semibold text-ink num">
-            {(dailyData.reduce((sum, d) => sum + d.avgRPE, 0) / dailyData.length).toFixed(1)}
+            {avgRpe === null ? '—' : avgRpe.toFixed(1)}
           </span>
         </div>
         <div>
           {t.intensityChart.statIntensity} <span className="font-semibold text-ink num">
-            {Math.round(dailyData.reduce((sum, d) => sum + d.avgIntensity, 0) / dailyData.length)}%
+            {avgIntensity === null ? '—' : `${Math.round(avgIntensity)}%`}
           </span>
         </div>
       </div>

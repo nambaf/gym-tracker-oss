@@ -5,14 +5,15 @@ import type { LoadState } from '@/lib/fetchJson'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 import type { Lang } from '@/lib/i18n'
-import { isFailureSet, formatSetNote } from '@/lib/setNotes'
+import { isFailureSet, formatSetNoteOf } from '@/lib/setNotes'
+import { daysBetweenLocal } from '@/lib/dateUtils'
 
 const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
 
 type HistoryStats = {
-  lastPerformance: { date: string; weight: number; reps: number; rpe?: number; note?: string; isFailure: boolean; daysAgo: number } | null
+  lastPerformance: { date: string; weight: number; reps: number; rpe?: number; note?: string; raw: any; isFailure: boolean; daysAgo: number } | null
   lastFailure: { date: string; weight: number; reps: number; daysAgo: number } | null
-  recentSets: Array<{ date: string; weight: number; reps: number; rpe?: number; note?: string; isFailure: boolean; e1rm: number }>
+  recentSets: Array<{ date: string; weight: number; reps: number; rpe?: number; note?: string; raw: any; isFailure: boolean; e1rm: number }>
   maxE1rm: number
   avgIntensity: number
 }
@@ -48,36 +49,45 @@ export default function ExerciseHistory({
     const last = exerciseSets[0]
     const lastPerformance = {
       date: last.date.toLocaleDateString(LOCALE[lang]),
-      weight: last.weight, reps: last.reps, rpe: last.rpe, note: last.note,
+      weight: last.weight, reps: last.reps, rpe: last.rpe, note: last.note, raw: last,
       isFailure: isFailureSet(last),
-      daysAgo: Math.floor((now.getTime() - last.date.getTime()) / (1000 * 60 * 60 * 24)),
+      daysAgo: daysBetweenLocal(last.date, now),
     }
 
     const failureSet = exerciseSets.find((s: any) => isFailureSet(s))
     const lastFailure = failureSet ? {
       date: failureSet.date.toLocaleDateString(LOCALE[lang]),
       weight: failureSet.weight, reps: failureSet.reps,
-      daysAgo: Math.floor((now.getTime() - failureSet.date.getTime()) / (1000 * 60 * 60 * 24)),
+      daysAgo: daysBetweenLocal(failureSet.date, now),
     } : null
 
     const recentSets = exerciseSets.slice(0, 5).map((s: any) => ({
       date: s.date.toLocaleDateString(LOCALE[lang]),
-      weight: s.weight, reps: s.reps, rpe: s.rpe, note: s.note,
+      weight: s.weight, reps: s.reps, rpe: s.rpe, note: s.note, raw: s,
       isFailure: isFailureSet(s),
       e1rm: Math.round(epley1RM(s.weight, s.reps)),
     }))
 
-    let maxE1rm = 0, intensitySum = 0, intensityCount = 0
+    let maxE1rm = 0
     exerciseSets.forEach((s: any) => {
-      const e1 = epley1RM(s.weight, s.reps)
-      maxE1rm = Math.max(maxE1rm, e1)
-      if (e1) { intensitySum += s.weight / e1; intensityCount++ }
+      maxE1rm = Math.max(maxE1rm, epley1RM(s.weight, s.reps))
     })
+
+    // Intensity relative to the best effort ever recorded on THIS exercise.
+    // Dividing each set by its own e1RM (the previous formula) cancels the
+    // weight out and yields a function of reps alone: 60 kg × 8 and 120 kg × 8
+    // both scored 79%.
+    let intensitySum = 0, intensityCount = 0
+    if (maxE1rm > 0) {
+      exerciseSets.forEach((s: any) => {
+        if (s.weight > 0) { intensitySum += (s.weight / maxE1rm) * 100; intensityCount++ }
+      })
+    }
 
     return {
       lastPerformance, lastFailure, recentSets,
       maxE1rm: Math.round(maxE1rm),
-      avgIntensity: intensityCount ? Math.round((intensitySum / intensityCount) * 100) : 0,
+      avgIntensity: intensityCount ? Math.round(intensitySum / intensityCount) : 0,
     }
   }, [setsState, exerciseId, currentSessionId, lang])
 
@@ -99,7 +109,7 @@ export default function ExerciseHistory({
   if (!stats) {
     return (
       <div className="p-3 rounded-xl bg-warning/8 text-ink-soft text-sm">
-        <strong>{t.exerciseHistory.firstTimePrefix}</strong> con {exerciseName}{t.exerciseHistory.firstTimeSuffix}
+        {t.exerciseHistory.firstTimeTemplate.replace('{name}', exerciseName)}
       </div>
     )
   }
@@ -116,7 +126,7 @@ export default function ExerciseHistory({
   }
 
   const stale = (stats.lastPerformance?.daysAgo || 0) > 14
-  const lastNote = formatSetNote(stats.lastPerformance?.note, t.setRow.intensityOpts)
+  const lastNote = stats.lastPerformance ? formatSetNoteOf(stats.lastPerformance.raw, t.setRow.intensityOpts) : ''
 
   return (
     <div className="space-y-2">
@@ -175,7 +185,7 @@ export default function ExerciseHistory({
           {expanded && (
             <div className="space-y-1.5 px-1">
               {stats.recentSets.map((set, i) => {
-                const note = formatSetNote(set.note, t.setRow.intensityOpts)
+                const note = formatSetNoteOf(set.raw, t.setRow.intensityOpts)
                 return (
                   <div key={i}>
                     <div className="flex items-center justify-between text-xs">
