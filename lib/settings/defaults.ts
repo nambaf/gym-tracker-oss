@@ -38,6 +38,35 @@ export const DEFAULT_REST_COMPOUND_SEC = 150  // 2:30
 export const DEFAULT_REST_STANDARD_SEC = 120  // 2:00
 export const DEFAULT_REST_ISOLATION_SEC = 75  // 1:15
 
+// CUSTOMIZE: fallback targets for an exercise added during a workout but not in
+// the plan. Off-plan work is normal, not an exception, so these should match how
+// you usually train rather than being placeholders.
+export const DEFAULT_TARGET_SETS = 3
+export const DEFAULT_TARGET_REPS = '8'
+
+// CUSTOMIZE: start the rest timer automatically as soon as a set is saved.
+// Set to false if you prefer to start it by hand.
+export const DEFAULT_AUTO_START_REST_TIMER = true
+
+// CUSTOMIZE: smallest load jump your equipment allows, in kg. Used by the
+// next-set suggestion: once you hit the top of the rep range, it adds this much.
+export const DEFAULT_PROGRESSION_STEP_KG = 2.5
+
+// CUSTOMIZE: fraction of the usual working load to use during a deload week.
+export const DEFAULT_DELOAD_LOAD_FACTOR = 0.9
+
+// CUSTOMIZE: lookback window, in weeks, for the per-exercise progression trend
+// (see lib/deload.ts). Shorter reacts faster but is noisier.
+export const DEFAULT_PROGRESS_WINDOW_WEEKS = 4
+
+// CUSTOMIZE: percentage change in estimated 1RM above which an exercise counts
+// as improving (and below its negative as declining). Anything in between is
+// considered stable.
+export const DEFAULT_PROGRESS_TREND_THRESHOLD_PCT = 2
+
+// CUSTOMIZE: how far back the history page allows a custom date range to reach.
+export const DEFAULT_MAX_HISTORY_MONTHS = 6
+
 // CUSTOMIZE: compound muscles (heavy multi-joint movements).
 // Lowercase, matched against normalised primaryMuscles names.
 export const DEFAULT_COMPOUND_MUSCLES: string[] = [

@@ -2,12 +2,15 @@
 import React, { useMemo } from 'react'
 import { useDataStore } from '@/store/data'
 import { getExerciseProgress } from '@/lib/deload'
+import { DEFAULT_PROGRESS_WINDOW_WEEKS, DEFAULT_PROGRESS_TREND_THRESHOLD_PCT } from '@/lib/settings/defaults'
 import { PlanRow } from '@/lib/models'
 import { useT } from '@/lib/i18n/I18nProvider'
 
 export default function ProgressModal({ onClose }: { onClose: () => void }) {
   const t = useT()
-  const { plan, sets, exercises } = useDataStore()
+  const { plan, sets, exercises, storedSettings } = useDataStore()
+
+  const windowWeeks = storedSettings.progressWindowWeeks ?? DEFAULT_PROGRESS_WINDOW_WEEKS
 
   const progressData = useMemo(() => {
     if (plan.status !== 'success' || !plan.data || sets.status !== 'success' || !sets.data || exercises.status !== 'success' || !exercises.data) return []
@@ -17,7 +20,12 @@ export default function ProgressModal({ onClose }: { onClose: () => void }) {
 
     return uniqueExerciseIds
       .map(id => {
-        const progress = getExerciseProgress(id, sets.data as any)
+        const progress = getExerciseProgress(
+          id,
+          sets.data as any,
+          windowWeeks,
+          storedSettings.progressTrendThresholdPct ?? DEFAULT_PROGRESS_TREND_THRESHOLD_PCT
+        )
         return {
           id,
           name: exMap.get(id) || id,
@@ -25,13 +33,13 @@ export default function ProgressModal({ onClose }: { onClose: () => void }) {
         }
       })
       .filter(item => item.progress !== null)
-  }, [plan, sets, exercises])
+  }, [plan, sets, exercises, storedSettings, windowWeeks])
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
       <div className="bg-white dark:bg-neutral-900 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
         <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-white/50 dark:bg-black/50 backdrop-blur">
-          <h2 className="text-xl font-bold">{t.progressModal.title}</h2>
+          <h2 className="text-xl font-bold">{t.progressModal.title.replace('{n}', String(windowWeeks))}</h2>
           <button onClick={onClose} className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors">
             ✕
           </button>
@@ -80,7 +88,7 @@ export default function ProgressModal({ onClose }: { onClose: () => void }) {
 
         <div className="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50">
           <p className="text-xs text-neutral-500 leading-relaxed">
-            {t.progressModal.footnote}
+            {t.progressModal.footnote.replace('{n}', String(windowWeeks))}
           </p>
         </div>
       </div>

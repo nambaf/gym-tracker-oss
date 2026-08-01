@@ -89,6 +89,8 @@ export type Dictionary = {
     periodLast3m: string
     periodLast6m: string
     maxRangeAlert: string
+    invalidRange: string
+    errorLoad: string
     sessionsCountSingular: string
     sessionsCountPlural: string
     timelineLabel: string
@@ -98,7 +100,7 @@ export type Dictionary = {
     morePrefix: string
     morePlural: string
     setsSuffix: string
-    rpeSuffix: string
+    intensitySuffix: string
     emptyState: string
   }
   bodyMap: {
@@ -156,8 +158,7 @@ export type Dictionary = {
   }
   exerciseHistory: {
     errorLoad: string
-    firstTimePrefix: string
-    firstTimeSuffix: string
+    firstTimeTemplate: string
     lastTime: string
     lastFailure: string
     maxE1rm: string
@@ -211,7 +212,26 @@ export type Dictionary = {
     notePlaceholder: string
     saveBtn: string
     saveBtnFailureSuffix: string
+    saving: string
+    saveFailed: string
+    flagsLabel: string
+    flagOpts: { pain: string; technique: string; interrupted: string; fatigued: string }
+    nextTimeLabel: string
+    nextTimeWeightPlaceholder: string
+    nextTimeOpts: {
+      hold: string
+      increase: string
+      decrease: string
+      retry: string
+    }
     lastSetLabel: string
+    prescriptionReason: {
+      progress: string
+      hold: string
+      repeat: string
+      estimate: string
+      deload: string
+    }
   }
   restTimer: {
     label: string
@@ -241,6 +261,7 @@ export type Dictionary = {
     yesterday: string
     daysAgoSuffix: string
     allSets: string
+    carryOverLabel: string
   }
   sessionSummary: {
     title: string
@@ -261,7 +282,6 @@ export type Dictionary = {
   }
   workout: {
     eyebrowDay: string
-    eyebrowReady: string
     exerciseLabel: string
     ofConnector: string
     setsTotalSuffix: string
@@ -275,6 +295,9 @@ export type Dictionary = {
     setPrefix: string
     chipFailure: string
     removeExerciseBtn: string
+    offPlanBadge: string
+    prTitle: string
+    prKind: { 'e1rm': string; 'weight': string; 'reps-at-weight': string }
     saving: string
     finishBtn: string
     pickerTitle: string
@@ -455,6 +478,14 @@ export type Dictionary = {
       restCompound: { label: string; helper: string }
       restStandard: { label: string; helper: string }
       restIsolation: { label: string; helper: string }
+    autoStartRest: { label: string; helper: string }
+    defaultTargetSets: { label: string; helper: string }
+    defaultTargetReps: { label: string }
+    progressionStepKg: { label: string; helper: string }
+    deloadLoadFactor: { label: string }
+    progressWindowWeeks: { label: string; helper: string }
+    progressTrendThresholdPct: { label: string }
+    maxHistoryMonths: { label: string; helper: string }
       restSecondsSuffix: string
       compoundMuscles: { label: string; placeholder: string; helper: string }
       isolationMuscles: { label: string; placeholder: string; helper: string }
@@ -561,7 +592,9 @@ export const it: Dictionary = {
     periodLast30: 'Ultimi 30 giorni',
     periodLast3m: 'Ultimi 3 mesi',
     periodLast6m: 'Ultimi 6 mesi',
-    maxRangeAlert: 'Il periodo massimo selezionabile è 6 mesi',
+    maxRangeAlert: 'Il periodo massimo selezionabile è {n} mesi',
+    invalidRange: 'Date non valide',
+    errorLoad: 'Impossibile caricare lo storico.',
     sessionsCountSingular: 'sessione',
     sessionsCountPlural: 'sessioni',
     timelineLabel: 'Sessioni',
@@ -571,7 +604,7 @@ export const it: Dictionary = {
     morePrefix: '+',
     morePlural: 'altri',
     setsSuffix: 'set',
-    rpeSuffix: 'RPE',
+    intensitySuffix: 'int.',
     emptyState: 'Nessuna sessione con esercizi trovata nel periodo selezionato.',
   },
   bodyMap: {
@@ -616,9 +649,9 @@ export const it: Dictionary = {
     tooltipVolume: 'Volume',
     totalSets: 'set totali',
     avgPerWeek: 'set di media/settimana',
-    breakdownTitle: 'Hard set per gruppo muscolare (settimana corrente)',
-    breakdownSubtitle: 'Set con RPE ≥ 7 (3 o meno ripetizioni in riserva)',
-    hardSets: 'hard set',
+    breakdownTitle: 'Set per gruppo muscolare (settimana corrente)',
+    breakdownSubtitle: 'Set registrati sui muscoli target, riscaldamenti inclusi',
+    hardSets: 'set',
     targetPrefix: '(obiettivo:',
     targetSuffix: 'set)',
     warnInsufficientTitle: 'Volume insufficiente',
@@ -646,8 +679,7 @@ export const it: Dictionary = {
   },
   exerciseHistory: {
     errorLoad: 'Errore nel caricamento storico',
-    firstTimePrefix: 'Prima volta',
-    firstTimeSuffix: '. Inizia con un peso gestibile e concentrati sulla tecnica.',
+    firstTimeTemplate: 'Prima volta con {name}. Inizia con un peso gestibile e concentrati sulla tecnica.',
     lastTime: 'Ultima volta',
     lastFailure: 'Ultimo cedimento',
     maxE1rm: 'Max e1RM',
@@ -669,12 +701,12 @@ export const it: Dictionary = {
     deactivateBtn: 'Disattiva',
   },
   progressModal: {
-    title: 'Analisi Progresso (ultime 4 settimane)',
+    title: 'Analisi progresso (ultime {n} settimane)',
     empty: 'Ancora nessun dato di progresso.',
     emptySubtitle: 'Continua ad allenarti per vedere i trend!',
     currentE1rm: 'e1RM Corrente',
     avgE1rm: 'e1RM Medio',
-    footnote: 'Il progresso è calcolato confrontando l\'e1RM (massimale stimato) delle ultime 4 settimane.',
+    footnote: 'Il progresso confronta il miglior e1RM di ogni seduta nelle ultime {n} settimane.',
     badgeImproving: 'In miglioramento',
     badgeStable: 'Stabile',
     badgeDeclining: 'In calo',
@@ -701,7 +733,31 @@ export const it: Dictionary = {
     notePlaceholder: 'Es. difficile i primi set, meglio del previsto…',
     saveBtn: 'Salva set',
     saveBtnFailureSuffix: '· cedimento',
+    saving: 'Salvataggio…',
+    saveFailed: 'Set non salvato. Controlla la connessione e riprova.',
+    flagsLabel: 'Com\'è andata',
+    flagOpts: {
+      pain: 'Dolore',
+      technique: 'Tecnica sporca',
+      interrupted: 'Serie interrotta',
+      fatigued: 'Ero già stanco',
+    },
+    nextTimeLabel: 'La prossima volta',
+    nextTimeWeightPlaceholder: 'Peso target (kg)',
+    nextTimeOpts: {
+      hold: 'Stesso peso',
+      increase: 'Aumenta',
+      decrease: 'Diminuisci',
+      retry: 'Riprova uguale',
+    },
     lastSetLabel: 'Ultimo set:',
+    prescriptionReason: {
+      progress: 'hai chiuso il target a {prev} kg, sali',
+      hold: 'resta qui finché non chiudi il target',
+      repeat: 'ripeti e aggiungi una ripetizione',
+      estimate: 'stima dal tuo massimale',
+      deload: 'scarico, da {prev} kg',
+    },
   },
   restTimer: {
     label: 'Riposo',
@@ -731,6 +787,7 @@ export const it: Dictionary = {
     yesterday: 'ieri',
     daysAgoSuffix: 'g fa',
     allSets: 'tutti',
+    carryOverLabel: 'Il tuo appunto per oggi',
   },
   sessionSummary: {
     title: 'Riepilogo sessione',
@@ -751,7 +808,6 @@ export const it: Dictionary = {
   },
   workout: {
     eyebrowDay: 'Allenamento',
-    eyebrowReady: 'Pronto',
     exerciseLabel: 'Esercizio',
     ofConnector: 'di',
     setsTotalSuffix: 'set tot.',
@@ -765,6 +821,13 @@ export const it: Dictionary = {
     setPrefix: 'Set',
     chipFailure: 'cedimento',
     removeExerciseBtn: 'Rimuovi esercizio dal workout',
+    offPlanBadge: 'Fuori piano',
+    prTitle: 'Record personale!',
+    prKind: {
+      'e1rm': 'massimale stimato migliorato di {delta}',
+      'weight': 'carico più alto di sempre, +{delta}',
+      'reps-at-weight': '{delta} ripetizioni in più a questo carico',
+    },
     saving: 'Salvataggio…',
     finishBtn: 'Termina allenamento',
     pickerTitle: 'Aggiungi esercizio',
@@ -971,6 +1034,29 @@ export const it: Dictionary = {
         helper: 'Tempo di recupero per esercizi di isolamento (curl, alzate laterali, push-down).',
       },
       restSecondsSuffix: 'sec',
+      autoStartRest: {
+        label: 'Avvia il recupero automaticamente',
+        helper: 'Fa partire il timer non appena salvi una serie, senza doverlo toccare.',
+      },
+      defaultTargetSets: {
+        label: 'Serie di default',
+        helper: 'Target usati per un esercizio aggiunto durante l\'allenamento ma non previsto dal piano.',
+      },
+      defaultTargetReps: { label: 'Ripetizioni di default' },
+      progressionStepKg: {
+        label: 'Incremento carico (kg)',
+        helper: 'Di quanto salire quando chiudi il target di ripetizioni, e a quale frazione del carico allenarti in scarico.',
+      },
+      deloadLoadFactor: { label: 'Fattore di scarico' },
+      progressWindowWeeks: {
+        label: 'Finestra progressione (sett.)',
+        helper: 'Quante settimane guardare indietro per il trend per esercizio, e di quanto deve variare l\'e1RM per contare come progressione.',
+      },
+      progressTrendThresholdPct: { label: 'Soglia trend (%)' },
+      maxHistoryMonths: {
+        label: 'Storico consultabile (mesi)',
+        helper: 'Quanto indietro può arrivare un intervallo personalizzato nello storico.',
+      },
       compoundMuscles: {
         label: 'Muscoli "multi-articolari"',
         placeholder: 'quadricipiti, glutei, dorsali, petto…',

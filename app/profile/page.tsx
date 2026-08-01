@@ -18,8 +18,16 @@ interface ProfileForm {
   athleteNotes: string
   trainingMode: TrainingMode
   deloadActive: boolean
+  autoStartRestTimer: boolean
   // advanced
   maxSetsPerSessionPerMuscle: number
+  defaultTargetSets: number
+  defaultTargetReps: string
+  progressionStepKg: number
+  deloadLoadFactor: number
+  progressWindowWeeks: number
+  progressTrendThresholdPct: number
+  maxHistoryMonths: number
   restCompoundSec: number
   restStandardSec: number
   restIsolationSec: number
@@ -38,7 +46,15 @@ function deriveForm(stored: Partial<Settings>): ProfileForm {
     athleteNotes: e.athleteNotes,
     trainingMode: e.trainingMode,
     deloadActive: e.deloadActive,
+    autoStartRestTimer: e.autoStartRestTimer,
     maxSetsPerSessionPerMuscle: e.maxSetsPerSessionPerMuscle,
+    defaultTargetSets: e.defaultTargetSets,
+    defaultTargetReps: e.defaultTargetReps,
+    progressionStepKg: e.progressionStepKg,
+    deloadLoadFactor: e.deloadLoadFactor,
+    progressWindowWeeks: e.progressWindowWeeks,
+    progressTrendThresholdPct: e.progressTrendThresholdPct,
+    maxHistoryMonths: e.maxHistoryMonths,
     restCompoundSec: e.restCompoundSec,
     restStandardSec: e.restStandardSec,
     restIsolationSec: e.restIsolationSec,
@@ -84,7 +100,15 @@ export default function ProfilePage() {
         athleteNotes: form.athleteNotes,
         trainingMode: form.trainingMode,
         deloadActive: form.deloadActive,
+        autoStartRestTimer: form.autoStartRestTimer,
         maxSetsPerSessionPerMuscle: form.maxSetsPerSessionPerMuscle,
+        defaultTargetSets: form.defaultTargetSets,
+        defaultTargetReps: form.defaultTargetReps,
+        progressionStepKg: form.progressionStepKg,
+        deloadLoadFactor: form.deloadLoadFactor,
+        progressWindowWeeks: form.progressWindowWeeks,
+        progressTrendThresholdPct: form.progressTrendThresholdPct,
+        maxHistoryMonths: form.maxHistoryMonths,
         restCompoundSec: form.restCompoundSec,
         restStandardSec: form.restStandardSec,
         restIsolationSec: form.restIsolationSec,
@@ -109,6 +133,7 @@ export default function ProfilePage() {
         athleteNotes: undefined,
         trainingMode: undefined,
         deloadActive: undefined,
+        autoStartRestTimer: undefined,
       })
       toast.success(t.profile.saved)
     } catch (_e) {
@@ -121,6 +146,13 @@ export default function ProfilePage() {
     try {
       await setSettings({
         maxSetsPerSessionPerMuscle: undefined,
+        defaultTargetSets: undefined,
+        defaultTargetReps: undefined,
+        progressionStepKg: undefined,
+        deloadLoadFactor: undefined,
+        progressWindowWeeks: undefined,
+        progressTrendThresholdPct: undefined,
+        maxHistoryMonths: undefined,
         restCompoundSec: undefined,
         restStandardSec: undefined,
         restIsolationSec: undefined,
@@ -308,6 +340,111 @@ export default function ProfilePage() {
           value={form.restIsolationSec}
           onChange={v => setForm(f => ({ ...f, restIsolationSec: v }))}
         />
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <label htmlFor="auto-rest" className="label block">{t.profile.advanced.autoStartRest.label}</label>
+            <p className="text-[11px] text-muted mt-1">{t.profile.advanced.autoStartRest.helper}</p>
+          </div>
+          <input
+            id="auto-rest"
+            type="checkbox"
+            className="w-5 h-5 shrink-0"
+            checked={form.autoStartRestTimer}
+            onChange={e => setForm(f => ({ ...f, autoStartRestTimer: e.target.checked }))}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="default-target-sets" className="label mb-1 block">
+              {t.profile.advanced.defaultTargetSets.label}
+            </label>
+            <input
+              id="default-target-sets"
+              type="number" min={1} max={10} className="input num"
+              value={form.defaultTargetSets}
+              onChange={e => setForm(f => ({ ...f, defaultTargetSets: Number(e.target.value) }))}
+            />
+          </div>
+          <div>
+            <label htmlFor="default-target-reps" className="label mb-1 block">
+              {t.profile.advanced.defaultTargetReps.label}
+            </label>
+            <input
+              id="default-target-reps"
+              type="text" className="input num"
+              value={form.defaultTargetReps}
+              onChange={e => setForm(f => ({ ...f, defaultTargetReps: e.target.value }))}
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted -mt-1">{t.profile.advanced.defaultTargetSets.helper}</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="progression-step" className="label mb-1 block">
+              {t.profile.advanced.progressionStepKg.label}
+            </label>
+            <input
+              id="progression-step"
+              type="number" min={0.5} max={20} step={0.5} className="input num"
+              value={form.progressionStepKg}
+              onChange={e => setForm(f => ({ ...f, progressionStepKg: Number(e.target.value) }))}
+            />
+          </div>
+          <div>
+            <label htmlFor="deload-factor" className="label mb-1 block">
+              {t.profile.advanced.deloadLoadFactor.label}
+            </label>
+            <input
+              id="deload-factor"
+              type="number" min={0.5} max={1} step={0.05} className="input num"
+              value={form.deloadLoadFactor}
+              onChange={e => setForm(f => ({ ...f, deloadLoadFactor: Number(e.target.value) }))}
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted -mt-1">{t.profile.advanced.progressionStepKg.helper}</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="progress-window" className="label mb-1 block">
+              {t.profile.advanced.progressWindowWeeks.label}
+            </label>
+            <input
+              id="progress-window"
+              type="number" min={2} max={26} className="input num"
+              value={form.progressWindowWeeks}
+              onChange={e => setForm(f => ({ ...f, progressWindowWeeks: Number(e.target.value) }))}
+            />
+          </div>
+          <div>
+            <label htmlFor="progress-threshold" className="label mb-1 block">
+              {t.profile.advanced.progressTrendThresholdPct.label}
+            </label>
+            <input
+              id="progress-threshold"
+              type="number" min={0} max={20} step={0.5} className="input num"
+              value={form.progressTrendThresholdPct}
+              onChange={e => setForm(f => ({ ...f, progressTrendThresholdPct: Number(e.target.value) }))}
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted -mt-1">{t.profile.advanced.progressWindowWeeks.helper}</p>
+
+        <div>
+          <label htmlFor="max-history-months" className="label mb-1 block">
+            {t.profile.advanced.maxHistoryMonths.label}
+          </label>
+          <input
+            id="max-history-months"
+            type="number" min={1} max={36} className="input num"
+            value={form.maxHistoryMonths}
+            onChange={e => setForm(f => ({ ...f, maxHistoryMonths: Number(e.target.value) }))}
+          />
+          <p className="text-[11px] text-muted mt-1">{t.profile.advanced.maxHistoryMonths.helper}</p>
+        </div>
 
         <div>
           <label htmlFor="compound-muscles" className="label mb-1 block">

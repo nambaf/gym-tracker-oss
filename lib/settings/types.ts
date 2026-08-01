@@ -23,11 +23,19 @@ export type Settings = {
   athleteNotes?: string
   trainingMode?: TrainingMode
   deloadActive?: boolean
+  autoStartRestTimer?: boolean
   // advanced simple
   maxSetsPerSessionPerMuscle?: number
   restCompoundSec?: number
   restStandardSec?: number
   restIsolationSec?: number
+  defaultTargetSets?: number
+  defaultTargetReps?: string
+  progressionStepKg?: number
+  deloadLoadFactor?: number
+  progressWindowWeeks?: number
+  progressTrendThresholdPct?: number
+  maxHistoryMonths?: number
   compoundMuscles?: string[]
   isolationMuscles?: string[]
   // advanced matrices

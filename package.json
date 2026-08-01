@@ -28,7 +28,8 @@
     "lint": "next lint",
     "release": "standard-version",
     "release:minor": "standard-version --release-as minor",
-    "release:major": "standard-version --release-as major"
+    "release:major": "standard-version --release-as major",
+    "check:settings": "node scripts/check-settings-chain.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1048.0",

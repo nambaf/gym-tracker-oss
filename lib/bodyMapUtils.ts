@@ -1,5 +1,6 @@
 import type { Exercise, PlanRow, Session, SetEntry, MuscleContribution } from './models'
 import { epley1RM } from './progress'
+import { buildExerciseBests, relativeIntensity } from './records'
 
 /**
  * Binary threshold for set counting: a muscle with ≥ 40% contribution counts
@@ -414,8 +415,10 @@ export function getWeeklyVolumeByMuscle(
 
 export interface DailyIntensityData {
   date: string
-  avgRPE: number
-  avgIntensity: number
+  /** null when no set that day carried an RPE — distinct from an RPE of 0. */
+  avgRPE: number | null
+  /** % of the athlete's best e1RM on each exercise; null when unmeasurable. */
+  avgIntensity: number | null
   sessions: number
 }
 
@@ -534,6 +537,8 @@ export function getDailyIntensityData(
 ): DailyIntensityData[] {
   const data: DailyIntensityData[] = []
   const now = new Date()
+  // One reference pass over the whole history, not per day.
+  const bests = buildExerciseBests(sets)
 
   for (let i = daysBack - 1; i >= 0; i--) {
     const date = new Date(now)
@@ -551,33 +556,28 @@ export function getDailyIntensityData(
 
     if (daySets.length === 0) continue
 
-    const setsWithRPE = daySets.filter(s => s.rpe !== undefined && s.rpe > 0)
+    const setsWithRPE = daySets.filter(s => s.rpe !== undefined && Number(s.rpe) > 0)
+    // A day with no RPE recorded is an absence of data, not an RPE of zero:
+    // averaging zeros in made rest-light days look like collapses.
     const avgRPE = setsWithRPE.length > 0
-      ? setsWithRPE.reduce((sum, s) => sum + (s.rpe || 0), 0) / setsWithRPE.length
-      : 0
+      ? setsWithRPE.reduce((sum, s) => sum + Number(s.rpe || 0), 0) / setsWithRPE.length
+      : null
 
-    // Average intensity (% of e1RM)
+    // Intensity relative to the athlete's best e1RM on each exercise. Dividing
+    // by the set's own e1RM (as this did before) cancels the weight out and
+    // leaves a function of reps alone.
     let intensitySum = 0
     let intensityCount = 0
-
     for (const s of daySets) {
-      const w = Number(s.weight)
-      const r = Number(s.reps)
-      if (w && r) {
-        const e1rm = epley1RM(w, r)
-        if (e1rm) {
-          intensitySum += (w / e1rm) * 100
-          intensityCount++
-        }
-      }
+      const rel = relativeIntensity(s, bests)
+      if (rel !== null) { intensitySum += rel; intensityCount++ }
     }
-
-    const avgIntensity = intensityCount > 0 ? intensitySum / intensityCount : 0
+    const avgIntensity = intensityCount > 0 ? Math.round(intensitySum / intensityCount) : null
 
     data.push({
       date: `${date.getDate()}/${date.getMonth() + 1}`,
-      avgRPE: Math.round(avgRPE * 10) / 10,
-      avgIntensity: Math.round(avgIntensity),
+      avgRPE: avgRPE === null ? null : Math.round(avgRPE * 10) / 10,
+      avgIntensity,
       sessions: daySessions.length
     })
   }

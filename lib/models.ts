@@ -26,6 +26,33 @@ export type Session = {
   duration?: number
 }
 
+/** Perceived intensity, 1 = very easy … 5 = very hard. Labels come from the dictionary. */
+export type IntensityLevel = 1 | 2 | 3 | 4 | 5
+
+/**
+ * What the athlete decided to do next time on this exercise. Written during the
+ * set, read at the top of the next session — the app used to lose this in free
+ * text ("continue at 59", "you can go up next time") and the athlete had to
+ * rewrite it every week.
+ */
+export type NextIntent = {
+  action: 'hold' | 'increase' | 'decrease' | 'retry'
+  weight?: number
+  reps?: number
+}
+
+/** Short, closed vocabulary for things worth filtering and aggregating on. */
+export type SetFlag = 'pain' | 'technique' | 'interrupted' | 'fatigued'
+
+/**
+ * A logged set.
+ *
+ * `note` is the legacy field: a single positional string of the form
+ * `cedimento[ - <italian intensity tag>][ - <free text>]`. It is still written
+ * for backward compatibility, but every consumer should read the structured
+ * fields below — `normalizeSet` derives them from `note` for older rows, so
+ * both shapes look identical from the application's point of view.
+ */
 export type SetEntry = {
   id: string
   sessionId: string
@@ -35,6 +62,17 @@ export type SetEntry = {
   rpe?: number
   note?: string
   ts: string
+  // ── structured fields (all optional, derived for legacy rows) ──
+  toFailure?: boolean
+  intensity?: IntensityLevel
+  /** Free text only — no tags, no separators. */
+  comment?: string
+  nextIntent?: NextIntent
+  flags?: SetFlag[]
+  /** 1-based position of this set within the exercise, in this session. */
+  setIndex?: number
+  /** Schema marker: 2 means the structured fields were written directly. */
+  schemaV?: number
 }
 
 /**

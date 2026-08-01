@@ -1,5 +1,7 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
+import { localDayKey } from '@/lib/dateUtils'
+import { isFailureSet } from '@/lib/setNotes'
 import { useParams, useRouter } from 'next/navigation'
 import { epley1RM } from '@/lib/progress'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -9,7 +11,6 @@ import { useT, useLang } from '@/lib/i18n/I18nProvider'
 import type { Lang } from '@/lib/i18n'
 
 const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
-const FAILURE_TAG = 'cedimento'
 
 function shortDay(d: Date, lang: Lang): string {
   return new Intl.DateTimeFormat(LOCALE[lang], { weekday: 'short' }).format(d)
@@ -48,7 +49,7 @@ export default function ExerciseProgressPage() {
   const chartData = useMemo(() => {
     const byDay = new Map<string, number>()
     for (const s of exSets as any[]) {
-      const d = new Date(s.ts).toISOString().slice(0, 10)
+      const d = localDayKey(new Date(s.ts))
       const e1 = epley1RM(Number(s.weight), Number(s.reps))
       byDay.set(d, Math.max(byDay.get(d) || 0, e1))
     }
@@ -268,7 +269,7 @@ export default function ExerciseProgressPage() {
                       <span className="num text-ink font-medium">
                         {set.weight} kg × {set.reps}
                       </span>
-                      {set.note?.includes(FAILURE_TAG) && (
+                      {isFailureSet(set) && (
                         <span className="text-[10px] text-accent-500 font-semibold">{t.exercise.chipFailure}</span>
                       )}
                     </div>

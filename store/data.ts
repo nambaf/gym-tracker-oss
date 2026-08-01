@@ -51,10 +51,19 @@ function parseStoredSettings(data: any): Partial<Settings> {
   }
   if (data.deloadActive === true || data.deloadActive === 'true') out.deloadActive = true
   else if (data.deloadActive === false || data.deloadActive === 'false') out.deloadActive = false
+  if (data.autoStartRestTimer === true || data.autoStartRestTimer === 'true') out.autoStartRestTimer = true
+  else if (data.autoStartRestTimer === false || data.autoStartRestTimer === 'false') out.autoStartRestTimer = false
   if (typeof data.maxSetsPerSessionPerMuscle === 'number') out.maxSetsPerSessionPerMuscle = data.maxSetsPerSessionPerMuscle
   if (typeof data.restCompoundSec === 'number') out.restCompoundSec = data.restCompoundSec
   if (typeof data.restStandardSec === 'number') out.restStandardSec = data.restStandardSec
   if (typeof data.restIsolationSec === 'number') out.restIsolationSec = data.restIsolationSec
+  if (typeof data.defaultTargetSets === 'number') out.defaultTargetSets = data.defaultTargetSets
+  if (typeof data.defaultTargetReps === 'string') out.defaultTargetReps = data.defaultTargetReps
+  if (typeof data.progressionStepKg === 'number') out.progressionStepKg = data.progressionStepKg
+  if (typeof data.deloadLoadFactor === 'number') out.deloadLoadFactor = data.deloadLoadFactor
+  if (typeof data.progressWindowWeeks === 'number') out.progressWindowWeeks = data.progressWindowWeeks
+  if (typeof data.progressTrendThresholdPct === 'number') out.progressTrendThresholdPct = data.progressTrendThresholdPct
+  if (typeof data.maxHistoryMonths === 'number') out.maxHistoryMonths = data.maxHistoryMonths
   if (Array.isArray(data.compoundMuscles)) out.compoundMuscles = data.compoundMuscles
   if (Array.isArray(data.isolationMuscles)) out.isolationMuscles = data.isolationMuscles
   if (data.thresholdsByMode && typeof data.thresholdsByMode === 'object') out.thresholdsByMode = data.thresholdsByMode

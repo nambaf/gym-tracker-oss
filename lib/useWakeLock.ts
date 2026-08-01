@@ -31,7 +31,14 @@ export function useWakeLock(enabled: boolean) {
   async function requestWakeLock() {
     try {
       if ('wakeLock' in navigator && !wakeLockRef.current) {
-        wakeLockRef.current = await navigator.wakeLock.request('screen')
+        const sentinel = await navigator.wakeLock.request('screen')
+        wakeLockRef.current = sentinel
+        // The browser releases the sentinel on its own whenever the document is
+        // hidden. Without clearing the ref the guard above stayed true forever,
+        // so the screen never woke back up for the rest of the workout.
+        sentinel.addEventListener('release', () => {
+          if (wakeLockRef.current === sentinel) wakeLockRef.current = null
+        })
       }
     } catch (err) {
       console.warn('Wake Lock not supported or denied:', err)
