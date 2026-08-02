@@ -61,6 +61,8 @@ function parseStoredSettings(data: any): Partial<Settings> {
   if (typeof data.defaultTargetReps === 'string') out.defaultTargetReps = data.defaultTargetReps
   if (typeof data.progressionStepKg === 'number') out.progressionStepKg = data.progressionStepKg
   if (typeof data.deloadLoadFactor === 'number') out.deloadLoadFactor = data.deloadLoadFactor
+  if (typeof data.maxFailurePct === 'number') out.maxFailurePct = data.maxFailurePct
+  if (typeof data.targetRpeWhenReducing === 'number') out.targetRpeWhenReducing = data.targetRpeWhenReducing
   if (typeof data.progressWindowWeeks === 'number') out.progressWindowWeeks = data.progressWindowWeeks
   if (typeof data.progressTrendThresholdPct === 'number') out.progressTrendThresholdPct = data.progressTrendThresholdPct
   if (typeof data.maxHistoryMonths === 'number') out.maxHistoryMonths = data.maxHistoryMonths

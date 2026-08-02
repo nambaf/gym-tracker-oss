@@ -1,5 +1,6 @@
 'use client'
 import Link from 'next/link'
+import WeeklyReviewCard from '@/components/WeeklyReviewCard'
 import { useEffect, useMemo } from 'react'
 import { useDataStore } from '@/store/data'
 import { BodyMap } from '@/components/BodyMap'
@@ -307,6 +308,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-7">
+      <WeeklyReviewCard />
       <header className="flex items-end justify-between">
         <div>
           <div className="eyebrow">{formatDateLong(today, lang)}</div>

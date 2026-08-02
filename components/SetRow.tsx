@@ -154,9 +154,11 @@ export function SetRow({
             <strong className="num">{prescription.weight} kg</strong>
             {' × '}<span className="num">{prescription.targetReps}</span>
             {' — '}
-            {t.setRow.prescriptionReason[prescription.reason].replace(
-              '{prev}', String(prescription.previousWeight ?? '')
-            )}
+            {t.setRow.prescriptionReason[prescription.reason]
+              .replace('{prev}', String(prescription.previousWeight ?? ''))
+              .replace('{intent}', prescription.intentAction
+                ? t.setRow.nextTimeOpts[prescription.intentAction].toLocaleLowerCase()
+                : '')}
           </span>
         </button>
       )}

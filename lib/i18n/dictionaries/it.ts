@@ -231,6 +231,7 @@ export type Dictionary = {
       repeat: string
       estimate: string
       deload: string
+      intent: string
     }
   }
   restTimer: {
@@ -302,6 +303,34 @@ export type Dictionary = {
     finishBtn: string
     pickerTitle: string
     pickerPlaceholder: string
+  }
+  coach: {
+    title: string
+    sessions: string
+    sets: string
+    toFailure: string
+    pendingHint: string
+    proposalsTitle: string
+    proposalsFootnote: string
+    apply: string
+    applying: string
+    applied: string
+    appliedShort: string
+    applyFailed: string
+    allGood: string
+    findings: {
+      coverageZero: string
+      coverageShort: string
+      adherenceFrequency: string
+      adherenceSkippedDays: string
+      adherenceOffPlan: string
+      failureTooHigh: string
+    }
+    proposals: {
+      adjustSets: string
+      moveExercise: string
+      adjustRpe: string
+    }
   }
   plan: {
     untitledPlan: string
@@ -482,6 +511,8 @@ export type Dictionary = {
     defaultTargetSets: { label: string; helper: string }
     defaultTargetReps: { label: string }
     progressionStepKg: { label: string; helper: string }
+    maxFailurePct: { label: string; helper: string }
+    targetRpeWhenReducing: { label: string }
     deloadLoadFactor: { label: string }
     progressWindowWeeks: { label: string; helper: string }
     progressTrendThresholdPct: { label: string }
@@ -757,6 +788,7 @@ export const it: Dictionary = {
       repeat: 'ripeti e aggiungi una ripetizione',
       estimate: 'stima dal tuo massimale',
       deload: 'scarico, da {prev} kg',
+      intent: 'come ti eri ripromesso ({intent}), da {prev} kg',
     },
   },
   restTimer: {
@@ -832,6 +864,34 @@ export const it: Dictionary = {
     finishBtn: 'Termina allenamento',
     pickerTitle: 'Aggiungi esercizio',
     pickerPlaceholder: 'Cerca esercizio…',
+  },
+  coach: {
+    title: 'La tua settimana',
+    sessions: 'sedute',
+    sets: 'serie',
+    toFailure: 'a cedimento',
+    pendingHint: '{n} proposte per la prossima settimana',
+    proposalsTitle: 'Cosa cambiare',
+    proposalsFootnote: 'Le modifiche vengono scritte sul piano attivo. Puoi sempre correggerle dalla pagina Piano.',
+    apply: 'Applica',
+    applying: '…',
+    applied: 'Piano aggiornato',
+    appliedShort: 'Fatto',
+    applyFailed: 'Non sono riuscito ad aggiornare il piano.',
+    allGood: 'Settimana in linea con il piano. Nessuna correzione da proporre.',
+    findings: {
+      coverageZero: 'Non hai allenato per niente: {muscles}.',
+      coverageShort: '{muscle}: {sets} serie sulle {target} della soglia ipertrofia, ne mancano {deficit}.',
+      adherenceFrequency: 'Hai fatto {done} sedute sulle {planned} previste dal piano.',
+      adherenceSkippedDays: 'Giorni di piano rimasti indietro: {days}.',
+      adherenceOffPlan: 'Hai aggiunto {count} esercizi fuori piano: {exercises}.',
+      failureTooHigh: 'Il {pct}% delle serie è andato a cedimento, sopra la tua soglia del {max}%. È probabile che il recupero, non lo stimolo, sia il fattore limitante.',
+    },
+    proposals: {
+      adjustSets: '{exercise} ({day}): da {from} a {to} serie',
+      moveExercise: 'Sposta {exercise} dal {from} al {to}',
+      adjustRpe: 'Abbassa l\'RPE target da {from} a {to} su {n} esercizi',
+    },
   },
   plan: {
     untitledPlan: 'Piano senza nome',
@@ -1048,6 +1108,11 @@ export const it: Dictionary = {
         helper: 'Di quanto salire quando chiudi il target di ripetizioni, e a quale frazione del carico allenarti in scarico.',
       },
       deloadLoadFactor: { label: 'Fattore di scarico' },
+      maxFailurePct: {
+        label: 'Cedimento massimo (%)',
+        helper: 'Oltre questa quota di serie a cedimento nella settimana, il coach segnala il recupero come fattore limitante e propone di abbassare l\'RPE al valore accanto.',
+      },
+      targetRpeWhenReducing: { label: 'RPE proposto' },
       progressWindowWeeks: {
         label: 'Finestra progressione (sett.)',
         helper: 'Quante settimane guardare indietro per il trend per esercizio, e di quanto deve variare l\'e1RM per contare come progressione.',

@@ -33,6 +33,8 @@ export type Settings = {
   defaultTargetReps?: string
   progressionStepKg?: number
   deloadLoadFactor?: number
+  maxFailurePct?: number
+  targetRpeWhenReducing?: number
   progressWindowWeeks?: number
   progressTrendThresholdPct?: number
   maxHistoryMonths?: number

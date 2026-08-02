@@ -15,22 +15,45 @@
  */
 import { epley1RM } from '../progress'
 import { MAX_REPS_FOR_E1RM } from '../records'
-import type { SetEntry } from '../models'
+import type { NextIntent, SetEntry } from '../models'
 
 export type Prescription = {
   weight: number
   /** Why this number — the UI turns this into a localised sentence. */
-  reason: 'progress' | 'hold' | 'repeat' | 'estimate' | 'deload'
+  reason: 'progress' | 'hold' | 'repeat' | 'estimate' | 'deload' | 'intent'
+  /** Set when the number comes from what the athlete decided last time. */
+  intentAction?: NextIntent['action']
   /** Reps the athlete is aiming for; the top of the range when there is one. */
   targetReps: number
   /** Load of the reference set this was derived from, when there is one. */
   previousWeight?: number
 }
 
-/** Round to the nearest achievable jump on the equipment. */
+/**
+ * Snap to the equipment's step grid. Only correct when there is no previous
+ * load to build on: applied to `previous + increment` it silently rewrites the
+ * jump, because the athlete's own working weight rarely sits on the grid —
+ * 26 + 2.5 came back as 27.5 (+1.5) and 57 + 2.5 as 60 (+3).
+ */
 function roundToIncrement(weight: number, increment: number): number {
   if (increment <= 0) return Math.round(weight * 10) / 10
   return Math.round(weight / increment) * increment
+}
+
+/** Half-kilo precision: readable without pretending the grid is finer. */
+function roundToHalf(weight: number): number {
+  return Math.round(weight * 2) / 2
+}
+
+/** The most recent instruction the athlete left themselves, if still standing. */
+function lastIntent(sets: { nextIntent?: NextIntent; ts: string }[]): NextIntent | null {
+  let latest: { ts: string; intent: NextIntent } | null = null
+  for (const s of sets) {
+    if (s.nextIntent?.action && (!latest || s.ts > latest.ts)) {
+      latest = { ts: s.ts, intent: s.nextIntent }
+    }
+  }
+  return latest?.intent ?? null
 }
 
 /**
@@ -69,7 +92,7 @@ export function suggestNextLoad(
 
     if (opts.isDeload) {
       return {
-        weight: roundToIncrement(top.w * opts.deloadFactor, opts.increment),
+        weight: roundToHalf(top.w * opts.deloadFactor),
         reason: 'deload',
         targetReps,
         previousWeight: top.w,
@@ -79,9 +102,31 @@ export function suggestNextLoad(
       // Bodyweight work: the load is not the variable, the reps are.
       return { weight: 0, reason: 'repeat', targetReps: Math.max(targetReps, repsAtTop + 1), previousWeight: 0 }
     }
-    if (repsAtTop >= targetReps) {
+
+    // What the athlete decided beats what the algorithm infers. They were the
+    // one under the bar; the note existed precisely to be acted on.
+    const intent = lastIntent(lastSession)
+    if (intent) {
+      const explicit = Number(intent.weight)
+      const hasExplicit = Number.isFinite(explicit) && explicit > 0
+      let weight = top.w
+      if (intent.action === 'increase') weight = hasExplicit ? explicit : top.w + opts.increment
+      else if (intent.action === 'decrease') weight = hasExplicit ? explicit : Math.max(0, top.w - opts.increment)
+      else if (hasExplicit) weight = explicit
       return {
-        weight: roundToIncrement(top.w + opts.increment, opts.increment),
+        weight: roundToHalf(weight),
+        reason: 'intent',
+        intentAction: intent.action,
+        targetReps,
+        previousWeight: top.w,
+      }
+    }
+
+    if (repsAtTop >= targetReps) {
+      // Add the step to the weight actually used, without snapping to the grid:
+      // the previous load is achievable by definition, so previous + step is too.
+      return {
+        weight: roundToHalf(top.w + opts.increment),
         reason: 'progress',
         targetReps,
         previousWeight: top.w,

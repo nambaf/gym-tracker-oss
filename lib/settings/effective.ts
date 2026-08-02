@@ -20,6 +20,8 @@ import {
   DEFAULT_MAX_HISTORY_MONTHS,
   DEFAULT_PROGRESSION_STEP_KG,
   DEFAULT_DELOAD_LOAD_FACTOR,
+  DEFAULT_MAX_FAILURE_PCT,
+  DEFAULT_TARGET_RPE_WHEN_REDUCING,
 } from './defaults'
 
 /**
@@ -44,6 +46,8 @@ export function mergeWithDefaults(stored: Partial<Settings> | null | undefined):
     defaultTargetReps: s.defaultTargetReps ?? DEFAULT_TARGET_REPS,
     progressionStepKg: s.progressionStepKg ?? DEFAULT_PROGRESSION_STEP_KG,
     deloadLoadFactor: s.deloadLoadFactor ?? DEFAULT_DELOAD_LOAD_FACTOR,
+    maxFailurePct: s.maxFailurePct ?? DEFAULT_MAX_FAILURE_PCT,
+    targetRpeWhenReducing: s.targetRpeWhenReducing ?? DEFAULT_TARGET_RPE_WHEN_REDUCING,
     progressWindowWeeks: s.progressWindowWeeks ?? DEFAULT_PROGRESS_WINDOW_WEEKS,
     progressTrendThresholdPct: s.progressTrendThresholdPct ?? DEFAULT_PROGRESS_TREND_THRESHOLD_PCT,
     maxHistoryMonths: s.maxHistoryMonths ?? DEFAULT_MAX_HISTORY_MONTHS,

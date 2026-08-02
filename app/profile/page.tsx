@@ -25,6 +25,8 @@ interface ProfileForm {
   defaultTargetReps: string
   progressionStepKg: number
   deloadLoadFactor: number
+  maxFailurePct: number
+  targetRpeWhenReducing: number
   progressWindowWeeks: number
   progressTrendThresholdPct: number
   maxHistoryMonths: number
@@ -52,6 +54,8 @@ function deriveForm(stored: Partial<Settings>): ProfileForm {
     defaultTargetReps: e.defaultTargetReps,
     progressionStepKg: e.progressionStepKg,
     deloadLoadFactor: e.deloadLoadFactor,
+    maxFailurePct: e.maxFailurePct,
+    targetRpeWhenReducing: e.targetRpeWhenReducing,
     progressWindowWeeks: e.progressWindowWeeks,
     progressTrendThresholdPct: e.progressTrendThresholdPct,
     maxHistoryMonths: e.maxHistoryMonths,
@@ -106,6 +110,8 @@ export default function ProfilePage() {
         defaultTargetReps: form.defaultTargetReps,
         progressionStepKg: form.progressionStepKg,
         deloadLoadFactor: form.deloadLoadFactor,
+        maxFailurePct: form.maxFailurePct,
+        targetRpeWhenReducing: form.targetRpeWhenReducing,
         progressWindowWeeks: form.progressWindowWeeks,
         progressTrendThresholdPct: form.progressTrendThresholdPct,
         maxHistoryMonths: form.maxHistoryMonths,
@@ -150,6 +156,8 @@ export default function ProfilePage() {
         defaultTargetReps: undefined,
         progressionStepKg: undefined,
         deloadLoadFactor: undefined,
+        maxFailurePct: undefined,
+        targetRpeWhenReducing: undefined,
         progressWindowWeeks: undefined,
         progressTrendThresholdPct: undefined,
         maxHistoryMonths: undefined,
@@ -406,6 +414,32 @@ export default function ProfilePage() {
           </div>
         </div>
         <p className="text-[11px] text-muted -mt-1">{t.profile.advanced.progressionStepKg.helper}</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="max-failure" className="label mb-1 block">
+              {t.profile.advanced.maxFailurePct.label}
+            </label>
+            <input
+              id="max-failure"
+              type="number" min={0} max={100} step={5} className="input num"
+              value={form.maxFailurePct}
+              onChange={e => setForm(f => ({ ...f, maxFailurePct: Number(e.target.value) }))}
+            />
+          </div>
+          <div>
+            <label htmlFor="target-rpe-reducing" className="label mb-1 block">
+              {t.profile.advanced.targetRpeWhenReducing.label}
+            </label>
+            <input
+              id="target-rpe-reducing"
+              type="number" min={5} max={10} step={0.5} className="input num"
+              value={form.targetRpeWhenReducing}
+              onChange={e => setForm(f => ({ ...f, targetRpeWhenReducing: Number(e.target.value) }))}
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted -mt-1">{t.profile.advanced.maxFailurePct.helper}</p>
 
         <div className="grid grid-cols-2 gap-3">
           <div>

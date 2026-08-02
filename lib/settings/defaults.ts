@@ -55,6 +55,15 @@ export const DEFAULT_PROGRESSION_STEP_KG = 2.5
 // CUSTOMIZE: fraction of the usual working load to use during a deload week.
 export const DEFAULT_DELOAD_LOAD_FACTOR = 0.9
 
+// CUSTOMIZE: share of weekly sets taken to failure above which the weekly
+// review flags recovery as the limiting factor. Literature puts the useful
+// ceiling well below 100%: past this, fatigue accumulates faster than adaptation.
+export const DEFAULT_MAX_FAILURE_PCT = 40
+
+// CUSTOMIZE: target RPE the weekly review proposes when it asks you to back off
+// from failure. 8 leaves roughly 2 reps in reserve.
+export const DEFAULT_TARGET_RPE_WHEN_REDUCING = 8
+
 // CUSTOMIZE: lookback window, in weeks, for the per-exercise progression trend
 // (see lib/deload.ts). Shorter reacts faster but is noisier.
 export const DEFAULT_PROGRESS_WINDOW_WEEKS = 4
