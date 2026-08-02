@@ -8,6 +8,7 @@ import { mergeWithDefaults } from '@/lib/settings/effective'
 import { buildWeeklyReview, applyProposal, type ReviewProposal } from '@/lib/coach/weeklyReview'
 import type { Plan, PlanRow } from '@/lib/models'
 import type { Lang } from '@/lib/i18n'
+import { WorkoutAIChat } from '@/components/WorkoutAIChat'
 
 const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
 
@@ -22,7 +23,7 @@ const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
 export default function WeeklyReviewCard() {
   const t = useT()
   const lang = useLang()
-  const { sessions, sets, exercises, plan, storedSettings, loadPlan } = useDataStore()
+  const { sessions, sets, exercises, plan, storedSettings, trainingMode, loadPlan } = useDataStore()
   const [open, setOpen] = useState(false)
   const [applying, setApplying] = useState<string | null>(null)
   const [applied, setApplied] = useState<string[]>([])
@@ -189,6 +190,19 @@ export default function WeeklyReviewCard() {
           {review.findings.length === 0 && review.proposals.length === 0 && (
             <p className="text-[12px] text-muted">{t.coach.allGood}</p>
           )}
+
+          {/* The conversation starts from the review above, not from a blank
+              slate. Renders nothing when AI_PROVIDER=off. */}
+          <WorkoutAIChat
+            mode="weekly"
+            planSummary={[]}
+            exercises={exercises.data || []}
+            plan={plan.data || []}
+            sessions={sessions.data || []}
+            weekSessions={sessions.data || []}
+            weekSets={sets.data || []}
+            trainingMode={trainingMode}
+          />
         </div>
       )}
     </section>

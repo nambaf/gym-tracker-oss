@@ -172,3 +172,30 @@ export function compareToPrevious(
           : deltaWeight > 0 ? 'up' : deltaWeight < 0 ? 'down' : 'same'
   return { direction, deltaWeight, deltaReps }
 }
+
+/**
+ * Sets of the most recent *other* session on an exercise, in the order they
+ * were performed. Independent of whatever the UI currently has on screen, so a
+ * caller triggered by auto-advance still gets the right comparison.
+ */
+export function previousSessionSetsFor(
+  sets: SetEntry[],
+  exerciseId: string,
+  currentSessionId?: string
+): SetEntry[] {
+  const bySession = new Map<string, SetEntry[]>()
+  for (const s of sets) {
+    if (s.exerciseId !== exerciseId || s.sessionId === currentSessionId) continue
+    const arr = bySession.get(s.sessionId)
+    if (arr) arr.push(s)
+    else bySession.set(s.sessionId, [s])
+  }
+  let latestId = ''
+  let latestTs = ''
+  for (const [sid, arr] of bySession) {
+    const maxTs = arr.reduce((m, x) => (String(x.ts) > m ? String(x.ts) : m), '')
+    if (maxTs > latestTs) { latestTs = maxTs; latestId = sid }
+  }
+  return (bySession.get(latestId) || [])
+    .sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')))
+}

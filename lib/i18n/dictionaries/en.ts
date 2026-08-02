@@ -52,6 +52,18 @@ export const en: Dictionary = {
     greeting: 'Hi! I\'m your AI Coach. I pre-filled a message below with your latest data. Edit it or send as-is.',
     placeholder: 'Ask the coach...',
     errorRetry: 'Error in response. Try again.',
+    quickActions: {
+      weekly: [
+        'What am I missing this week?',
+        'How do I make up back volume?',
+        'Am I progressing or stuck?',
+      ],
+      plan: [
+        'How can I balance the plan?',
+        'Adding a 4th day, what should I put in?',
+        'Alternatives for hack squat',
+      ],
+    },
   },
   trainingModes: {
     intensity: { label: 'Intensity', desc: 'Few sets to failure' },
@@ -351,6 +363,7 @@ export const en: Dictionary = {
     appliedShort: 'Done',
     applyFailed: 'Could not update the plan.',
     allGood: 'The week matched the plan. Nothing to correct.',
+    debriefLabel: 'Coach',
     findings: {
       coverageZero: 'Not trained at all: {muscles}.',
       coverageShort: '{muscle}: {sets} sets against the hypertrophy threshold of {target}, {deficit} short.',

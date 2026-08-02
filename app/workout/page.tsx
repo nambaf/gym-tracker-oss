@@ -12,6 +12,7 @@ import { useWakeLock } from '@/lib/useWakeLock'
 import { WorkoutTimer } from '@/components/WorkoutTimer'
 import { sortDays } from '@/lib/dayUtils'
 import DeloadBanner from '@/components/DeloadBanner'
+import ExerciseDebrief from '@/components/ExerciseDebrief'
 import { Plan, PlanRow, IntensityLevel, NextIntent, SetFlag } from '@/lib/models'
 import { getRestPresetForExercise } from '@/lib/restTimerPresets'
 import { localDayKey } from '@/lib/dateUtils'
@@ -21,9 +22,9 @@ import {
 } from '@/lib/settings/defaults'
 import { parseRepTarget, repsForSet } from '@/lib/workout/repTarget'
 import { suggestNextLoad } from '@/lib/workout/prescription'
-import { detectPR, type PrResult } from '@/lib/records'
+import { detectPR, previousSessionSetsFor, type PrResult } from '@/lib/records'
 import { Check, Plus, X, Search, CheckCircle2, Trophy } from 'lucide-react'
-import { useT } from '@/lib/i18n/I18nProvider'
+import { useT, useLang } from '@/lib/i18n/I18nProvider'
 
 /** True when `isoDate` falls on the same local calendar day as `dayKey`. */
 function isSameLocalDay(isoDate: string | undefined, dayKey: string): boolean {
@@ -95,6 +96,7 @@ type WorkoutExercise = {
 
 export default function WorkoutPage() {
   const t = useT()
+  const lang = useLang()
   const [session, setSession] = useState<any | null>(null)
   const [planRows, setPlanRows] = useState<any[]>([])
   const [days, setDays] = useState<string[]>([])
@@ -109,6 +111,8 @@ export default function WorkoutPage() {
   const [lastSavedSetId, setLastSavedSetId] = useState<string | null>(null)
   const [restSignal, setRestSignal] = useState(0)
   const [lastPr, setLastPr] = useState<PrResult | null>(null)
+  // Set when a set completes an exercise; identifies that completion uniquely.
+  const [debriefTrigger, setDebriefTrigger] = useState<string | null>(null)
   const prTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const carouselRef = useRef<HTMLDivElement>(null)
@@ -125,7 +129,7 @@ export default function WorkoutPage() {
     exercises: exercisesState,
     loadSessions, loadSets, loadExercises, loadSettings,
     addSessionOptimistic, addSetOptimistic, removeSetOptimistic,
-    updateSessionOptimistic, deloadActive,
+    updateSessionOptimistic, deloadActive, trainingMode,
     storedSettings,
   } = useDataStore()
 
@@ -333,6 +337,13 @@ export default function WorkoutPage() {
     })
   }, [workoutExercises, activeExIndex, currentExerciseHistory, deloadActive, storedSettings, fallbackTargetReps])
 
+  /** The same exercise in its previous session — the coach's comparison point. */
+  const previousSessionSets = useMemo(() => {
+    const ex = workoutExercises[activeExIndex]
+    if (!ex || setsState.status !== 'success') return []
+    return previousSessionSetsFor(setsState.data || [], ex.id, session?.id)
+  }, [workoutExercises, activeExIndex, setsState, session])
+
   async function addSet(
     exIndex: number,
     p: {
@@ -398,6 +409,12 @@ export default function WorkoutPage() {
       // over an exercise the user selected by hand. The old effect re-ran on
       // every change to workoutExercises, so any extra set on a finished
       // exercise bounced the athlete somewhere else mid-workout.
+      if (completedAfter === ex.targetSets) {
+        // The natural pause: the exercise is done and they are about to walk to
+        // the next machine. Keyed by session+exercise so extra sets afterwards
+        // don't ask the coach again.
+        setDebriefTrigger(`${currentSession.id}:${ex.id}`)
+      }
       if (!manualSelectionRef.current && completedAfter === ex.targetSets) {
         const next = workoutExercises.findIndex(
           (e, i) => i > exIndex && e.completedSets.length < e.targetSets
@@ -621,6 +638,34 @@ export default function WorkoutPage() {
               isDeload={deloadActive}
             />
           </div>
+
+          <ExerciseDebrief
+            trigger={debriefTrigger}
+            buildContext={() => {
+              // Read from the exercise the trigger refers to, not the one now on
+              // screen: auto-advance may already have moved the athlete on.
+              const exId = debriefTrigger?.split(':')[1]
+              const ex = workoutExercises.find(e => e.id === exId)
+              if (!ex) return null
+              return {
+                exerciseName: ex.name,
+                todaySets: ex.completedSets,
+                previousSets: previousSessionSetsFor(setsState.data || [], ex.id, session?.id),
+                targetSets: ex.targetSets,
+                targetReps: ex.targetReps,
+                targetRpe: ex.targetRpe,
+                offPlan: !ex.fromPlan,
+                exercisesDone: workoutExercises.filter(e => e.completedSets.length >= e.targetSets).length,
+                exercisesTotal: workoutExercises.length,
+                sessions: sessionsState.data || [],
+                sets: setsState.data || [],
+                exercises,
+                plan: planRows,
+                trainingMode,
+                lang,
+              }
+            }}
+          />
 
           {lastPr && (
             <div className="rounded-2xl bg-success/10 text-success px-4 py-3 flex items-center gap-2">

@@ -30,6 +30,7 @@ frontend:
         - export ENVIRONMENT="${ENVIRONMENT:-dev}"
         - export APP_NAME="${APP_NAME:-gym-tracker}"
         - export AI_PROVIDER="${AI_PROVIDER:-off}"
+        - export AI_FALLBACK_PROVIDER="${AI_FALLBACK_PROVIDER:-off}"
         - export DEFAULT_LANG="${DEFAULT_LANG:-it}"
         - export DATA_CACHE_TTL_S="${DATA_CACHE_TTL_S:-600}"
         - |
@@ -47,6 +48,7 @@ frontend:
           COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
           COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
           AI_PROVIDER=${AI_PROVIDER}
+          AI_FALLBACK_PROVIDER=${AI_FALLBACK_PROVIDER}
           BEDROCK_REGION=${BEDROCK_REGION}
           BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID}
           GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -59,7 +61,7 @@ frontend:
           EOF
         - |
           echo "== Effective build variables (secrets hidden) =="
-          grep -E '^(APP_AWS_REGION|APP_NAME|ENVIRONMENT|DYNAMO_TABLE_|COGNITO_USER_POOL_ID|COGNITO_CLIENT_ID|AI_PROVIDER|DEFAULT_LANG|DATA_CACHE_TTL_S)=' .env.production || true
+          grep -E '^(APP_AWS_REGION|APP_NAME|ENVIRONMENT|DYNAMO_TABLE_|COGNITO_USER_POOL_ID|COGNITO_CLIENT_ID|AI_PROVIDER|AI_FALLBACK_PROVIDER|DEFAULT_LANG|DATA_CACHE_TTL_S)=' .env.production || true
         - npm run build
 
   artifacts:

@@ -28,6 +28,7 @@ interface WorkoutAIChatProps {
         remainingSets: number
     }>
     trainingMode?: TrainingMode
+    sessions?: Session[]
 }
 
 export function WorkoutAIChat({
@@ -38,7 +39,8 @@ export function WorkoutAIChat({
     weekSessions = [],
     weekSets = [],
     missingExercises = [],
-    trainingMode = 'mixed'
+    trainingMode = 'mixed',
+    sessions = [],
 }: WorkoutAIChatProps) {
     const t = useT()
     const lang = useLang()
@@ -133,29 +135,9 @@ export function WorkoutAIChat({
         }
     }
 
-    const quickActions = lang === 'en'
-        ? (mode === 'weekly'
-            ? [
-                'What am I missing this week?',
-                'Alternatives for leg curl',
-                'How do I make up back volume?',
-            ]
-            : [
-                'How can I balance the plan?',
-                'Adding a 4th day, what should I put in?',
-                'Alternatives for hack squat',
-            ])
-        : (mode === 'weekly'
-            ? [
-                'Cosa mi manca questa settimana?',
-                'Alternative per leg curl',
-                'Come recupero il volume dorsali?',
-            ]
-            : [
-                'Come bilanciare meglio il piano?',
-                'Aggiungo un 4 giorno, cosa metto?',
-                'Alternative per hack squat',
-            ])
+    // Suggestions come from the dictionary: they are user-facing copy, and the
+    // intra-workout ones have to name the exercise you are actually standing at.
+    const quickActions = t.ai.quickActions[mode] as readonly string[]
 
     if (!aiEnabled) return null
 

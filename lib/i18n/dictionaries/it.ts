@@ -50,6 +50,10 @@ export type Dictionary = {
     greeting: string
     placeholder: string
     errorRetry: string
+    quickActions: {
+      weekly: string[]
+      plan: string[]
+    }
   }
   trainingModes: {
     intensity: { label: string; desc: string }
@@ -318,6 +322,7 @@ export type Dictionary = {
     appliedShort: string
     applyFailed: string
     allGood: string
+    debriefLabel: string
     findings: {
       coverageZero: string
       coverageShort: string
@@ -580,6 +585,18 @@ export const it: Dictionary = {
     greeting: 'Ciao! Sono il tuo Coach AI. Ho precompilato un messaggio qui sotto con i dati aggiornati. Modificalo o invialo così com\'è.',
     placeholder: 'Chiedi al coach...',
     errorRetry: 'Errore nella risposta. Riprova.',
+    quickActions: {
+      weekly: [
+        'Cosa mi manca questa settimana?',
+        'Come recupero il volume dorsali?',
+        'Sto andando avanti o sono fermo?',
+      ],
+      plan: [
+        'Come bilanciare meglio il piano?',
+        'Aggiungo un 4 giorno, cosa metto?',
+        'Alternative per hack squat',
+      ],
+    },
   },
   trainingModes: {
     intensity: { label: 'Intensità', desc: 'Pochi set a cedimento' },
@@ -879,6 +896,7 @@ export const it: Dictionary = {
     appliedShort: 'Fatto',
     applyFailed: 'Non sono riuscito ad aggiornare il piano.',
     allGood: 'Settimana in linea con il piano. Nessuna correzione da proporre.',
+    debriefLabel: 'Il coach',
     findings: {
       coverageZero: 'Non hai allenato per niente: {muscles}.',
       coverageShort: '{muscle}: {sets} serie sulle {target} della soglia ipertrofia, ne mancano {deficit}.',

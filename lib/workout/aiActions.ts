@@ -22,6 +22,10 @@ import { buildWeeklyAnalysisPrompt } from './prompts/weekly'
 import { buildPlanAnalysisPrompt } from './prompts/plan'
 import { buildChatPrompt } from './prompts/chat'
 import { buildAlternativesPrompt } from './prompts/alternatives'
+import { buildExerciseDebriefPrompt } from './prompts/exerciseDebrief'
+import { buildAthleteContext } from './prompts/context'
+import { commentOf, intensityOf, isFailureSet, INTENSITY_KEYS } from '../setNotes'
+import type { Prescription } from './prescription'
 
 export type ChatMessage = {
     role: 'user' | 'assistant'
@@ -139,50 +143,30 @@ export async function chatWithCoach(
         lang?: Lang
     },
 ): Promise<string> {
-    const { planSummary, exercises, plan, weekSessions, weekSets, trainingMode = 'mixed', lang = 'it' } = context
+    const { exercises = [], plan = [], weekSessions = [], weekSets = [], trainingMode = 'mixed', lang = 'it' } = context
     const settings = await getServerEffectiveSettings()
 
     const todayString = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'it-IT', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     })
 
-    const actualVolume = new Map<string, number>()
-    if (weekSets && weekSets.length > 0 && exercises) {
-        for (const set of weekSets) {
-            const ex = exercises.find(e => e.id === set.exerciseId)
-            if (!ex?.primaryMuscles) continue
-            for (const m of ex.primaryMuscles) {
-                const norm = m.muscle.toLowerCase().trim()
-                actualVolume.set(norm, (actualVolume.get(norm) || 0) + 1)
-            }
-        }
-    }
-
-    const contextLines: string[] = []
-    if (weekSessions) {
-        contextLines.push(`Sessions this week: ${weekSessions.length}`)
-        const lastSession = weekSessions[weekSessions.length - 1]
-        if (lastSession?.note) contextLines.push(`Last session note: "${lastSession.note}"`)
-    }
-    if (actualVolume.size > 0) {
-        contextLines.push(
-            'Volume done this week (sets per muscle):',
-            ...Array.from(actualVolume.entries()).map(([m, s]) => `- ${m}: ${s}`),
-        )
-    }
-    if (planSummary && planSummary.length > 0) {
-        contextLines.push(
-            'Planned weekly volume (target):',
-            planSummary.map(m => `${m.muscle}: ${m.totalSets}`).join(', '),
-        )
-    }
-    if (exercises && plan) {
-        const planExercises = plan.slice(0, 20).map(p => {
-            const ex = exercises.find(e => e.id === p.exerciseId)
-            return ex?.name || p.exerciseId
-        }).join(', ')
-        contextLines.push('Exercises in plan:', planExercises)
-    }
+    // One shared context instead of a per-caller tally: the old inline version
+    // normalised muscle names by lowercasing them, so it never matched the
+    // groups the rest of the app uses, and it counted every contribution
+    // regardless of how marginal.
+    const athleteContext = buildAthleteContext({
+        lang,
+        sessions: weekSessions,
+        sets: weekSets,
+        exercises,
+        planRows: plan,
+        trainingMode,
+        thresholdsByMode: settings.thresholdsByMode,
+        maxFailurePct: settings.maxFailurePct,
+        targetRpeWhenReducing: settings.targetRpeWhenReducing,
+        progressWindowWeeks: settings.progressWindowWeeks,
+        progressTrendThresholdPct: settings.progressTrendThresholdPct,
+    })
 
     const history = messages
         .slice(-6)
@@ -193,13 +177,114 @@ export async function chatWithCoach(
         lang,
         trainingMode,
         todayString,
-        contextBlock: contextLines.join('\n'),
+        contextBlock: athleteContext,
         history,
         athleteProfile: settings.athleteProfile,
         athleteNotes: settings.athleteNotes,
     })
 
     return callModel(prompt)
+}
+
+/** Render one set the way a coach would read it aloud. */
+function describeSet(s: SetEntry, lang: Lang): string {
+    const bits = [`${s.weight}x${s.reps}`]
+    const lvl = intensityOf(s)
+    if (lvl) {
+        const key = INTENSITY_KEYS.find(i => i.level === lvl)?.key
+        if (key) bits.push(key)
+    }
+    if (isFailureSet(s)) bits.push(lang === 'en' ? 'to failure' : 'a cedimento')
+    if (s.flags?.length) bits.push(s.flags.join('/'))
+    const c = commentOf(s)
+    if (c) bits.push(`"${c}"`)
+    return bits.join(' · ')
+}
+
+export type ExerciseDebriefContext = {
+    exerciseName: string
+    /** Every set done on this exercise today, in order. */
+    todaySets: SetEntry[]
+    /** The same exercise in its previous session. */
+    previousSets: SetEntry[]
+    targetSets: number
+    targetReps: string
+    targetRpe?: number
+    /** True when the exercise was added during the session, off plan. */
+    offPlan?: boolean
+    /** Whole-session progress, so the coach can pace what it says. */
+    exercisesDone: number
+    exercisesTotal: number
+    sessions: Session[]
+    sets: SetEntry[]
+    exercises: Exercise[]
+    plan: PlanRow[]
+    trainingMode?: TrainingMode
+    lang?: Lang
+}
+
+/**
+ * Unprompted comment when an exercise is completed.
+ *
+ * Deliberately narrow: it gets the exercise that just ended plus the shared
+ * athlete context, and is told not to repeat what is already on screen.
+ */
+export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise<string> {
+    const { trainingMode = 'mixed', lang = 'it' } = ctx
+    const settings = await getServerEffectiveSettings()
+    const en = lang === 'en'
+
+    const lines: string[] = []
+    lines.push(`${ctx.exerciseName}${ctx.offPlan ? (en ? ' (off plan)' : ' (fuori piano)') : ''}`)
+    lines.push(en
+        ? `Target: ${ctx.targetSets} sets x ${ctx.targetReps} reps${ctx.targetRpe ? ` @RPE ${ctx.targetRpe}` : ''}`
+        : `Target: ${ctx.targetSets} serie x ${ctx.targetReps} ripetizioni${ctx.targetRpe ? ` @RPE ${ctx.targetRpe}` : ''}`)
+
+    lines.push(en ? 'Sets just done:' : 'Serie appena fatte:')
+    lines.push(...ctx.todaySets.map((s, i) => `  ${i + 1}. ${describeSet(s, lang)}`))
+
+    if (ctx.previousSets.length > 0) {
+        lines.push(en ? 'Same exercise, previous session:' : 'Stesso esercizio, seduta precedente:')
+        lines.push(...ctx.previousSets.map((s, i) => `  ${i + 1}. ${describeSet(s, lang)}`))
+        const prevVol = ctx.previousSets.reduce((v, s) => v + Number(s.weight) * Number(s.reps), 0)
+        const nowVol = ctx.todaySets.reduce((v, s) => v + Number(s.weight) * Number(s.reps), 0)
+        const delta = prevVol > 0 ? Math.round(((nowVol - prevVol) / prevVol) * 100) : null
+        if (delta !== null) {
+            lines.push(en
+                ? `Volume on this exercise vs last session: ${delta > 0 ? '+' : ''}${delta}%`
+                : `Volume su questo esercizio rispetto alla seduta scorsa: ${delta > 0 ? '+' : ''}${delta}%`)
+        }
+    } else {
+        lines.push(en ? 'No previous session on this exercise to compare with.'
+                      : 'Nessuna seduta precedente su questo esercizio con cui confrontare.')
+    }
+
+    lines.push(en
+        ? `Session progress: ${ctx.exercisesDone}/${ctx.exercisesTotal} exercises done`
+        : `Avanzamento seduta: ${ctx.exercisesDone}/${ctx.exercisesTotal} esercizi completati`)
+
+    const athleteContext = buildAthleteContext({
+        lang,
+        sessions: ctx.sessions,
+        sets: ctx.sets,
+        exercises: ctx.exercises,
+        planRows: ctx.plan,
+        trainingMode,
+        thresholdsByMode: settings.thresholdsByMode,
+        maxFailurePct: settings.maxFailurePct,
+        targetRpeWhenReducing: settings.targetRpeWhenReducing,
+        progressWindowWeeks: settings.progressWindowWeeks,
+        progressTrendThresholdPct: settings.progressTrendThresholdPct,
+    })
+
+    return callModel(buildExerciseDebriefPrompt({
+        lang,
+        trainingMode,
+        athleteProfile: settings.athleteProfile,
+        athleteNotes: settings.athleteNotes,
+        athleteContext,
+        situation: lines.join('\n'),
+    }))
 }
 
 /**

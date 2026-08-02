@@ -25,12 +25,29 @@ const DEFAULT_OPTS: Required<GenerateOptions> = {
 
 const MAX_ATTEMPTS = 3
 
-function getProviderName(): AIProvider {
-  const raw = (process.env.AI_PROVIDER || 'off').toLowerCase()
-  if (!VALID_PROVIDERS.includes(raw as AIProvider)) {
-    throw new AIConfigError(`Invalid AI_PROVIDER: ${raw}`)
+function parseProvider(raw: string, varName: string): AIProvider {
+  const value = raw.toLowerCase()
+  if (!VALID_PROVIDERS.includes(value as AIProvider)) {
+    throw new AIConfigError(`Invalid ${varName}: ${raw}`)
   }
-  return raw as AIProvider
+  return value as AIProvider
+}
+
+function getProviderName(): AIProvider {
+  return parseProvider(process.env.AI_PROVIDER || 'off', 'AI_PROVIDER')
+}
+
+/**
+ * Provider to try when the primary one fails for a reason retrying won't fix —
+ * a free-tier quota that has run out, a revoked key, a model the account can't
+ * reach. Lets an adopter run a free provider by default and pay only for the
+ * calls it can't serve.
+ *
+ * CUSTOMIZE: set AI_FALLBACK_PROVIDER to any value AI_PROVIDER accepts.
+ * Leave unset (or 'off') for no fallback.
+ */
+function getFallbackProviderName(): AIProvider {
+  return parseProvider(process.env.AI_FALLBACK_PROVIDER || 'off', 'AI_FALLBACK_PROVIDER')
 }
 
 export function isAIEnabled(): boolean {
@@ -39,13 +56,13 @@ export function isAIEnabled(): boolean {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-export async function generateText(prompt: string, options?: GenerateOptions): Promise<string> {
-  const name = getProviderName()
-  if (name === 'off') throw new AIDisabledError()
-
+/** Run one provider with the retry policy. Throws once its attempts are spent. */
+async function callProvider(
+  name: Exclude<AIProvider, 'off'>,
+  prompt: string,
+  opts: Required<GenerateOptions>,
+): Promise<string> {
   const fn = PROVIDERS[name]
-  const opts: Required<GenerateOptions> = { ...DEFAULT_OPTS, ...options }
-
   let lastError: unknown = null
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
@@ -58,4 +75,32 @@ export async function generateText(prompt: string, options?: GenerateOptions): P
     }
   }
   throw lastError instanceof Error ? lastError : new Error('AI call failed')
+}
+
+export async function generateText(prompt: string, options?: GenerateOptions): Promise<string> {
+  const name = getProviderName()
+  if (name === 'off') throw new AIDisabledError()
+
+  const opts: Required<GenerateOptions> = { ...DEFAULT_OPTS, ...options }
+
+  try {
+    return await callProvider(name, prompt, opts)
+  } catch (primaryError) {
+    const fallback = getFallbackProviderName()
+    // A misconfigured fallback must not mask the real failure, and falling back
+    // to the provider that just failed would only double the latency.
+    if (fallback === 'off' || fallback === name) throw primaryError
+    console.warn(
+      `AI provider "${name}" failed, falling back to "${fallback}":`,
+      primaryError instanceof Error ? primaryError.message : primaryError,
+    )
+    try {
+      return await callProvider(fallback, prompt, opts)
+    } catch (fallbackError) {
+      console.error(`AI fallback "${fallback}" also failed:`,
+        fallbackError instanceof Error ? fallbackError.message : fallbackError)
+      // The primary is the one the adopter configured; report its failure.
+      throw primaryError
+    }
+  }
 }
