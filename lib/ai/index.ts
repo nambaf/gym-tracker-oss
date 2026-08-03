@@ -26,9 +26,13 @@ const DEFAULT_OPTS: Required<GenerateOptions> = {
 const MAX_ATTEMPTS = 3
 
 function parseProvider(raw: string, varName: string): AIProvider {
-  const value = raw.toLowerCase()
+  const value = raw.trim().toLowerCase()
   if (!VALID_PROVIDERS.includes(value as AIProvider)) {
-    throw new AIConfigError(`Invalid ${varName}: ${raw}`)
+    // Name the accepted values: the failure mode this guards is a deploy where
+    // the coach is silently absent, and "invalid" alone doesn't say what to fix.
+    throw new AIConfigError(
+      `Invalid ${varName}: "${raw}". Accepted values: ${VALID_PROVIDERS.join(' | ')}.`
+    )
   }
   return value as AIProvider
 }
@@ -61,6 +65,7 @@ async function callProvider(
   name: Exclude<AIProvider, 'off'>,
   prompt: string,
   opts: Required<GenerateOptions>,
+  { bailOnRateLimit = false }: { bailOnRateLimit?: boolean } = {},
 ): Promise<string> {
   const fn = PROVIDERS[name]
   let lastError: unknown = null
@@ -70,6 +75,11 @@ async function callProvider(
     } catch (err) {
       lastError = err
       if (err instanceof AIConfigError) throw err
+      // Backing off is only worth it when there is nothing better to do. A
+      // free-tier quota answers 429 for the rest of its window, so with another
+      // provider configured the retries just add ~1.2s of sleep to every call
+      // before reaching the answer the fallback would have given immediately.
+      if (bailOnRateLimit && (err as { status?: number })?.status === 429) break
       if (!isRetriable(err) || attempt === MAX_ATTEMPTS - 1) break
       await sleep(400 * (attempt + 1))
     }
@@ -82,14 +92,15 @@ export async function generateText(prompt: string, options?: GenerateOptions): P
   if (name === 'off') throw new AIDisabledError()
 
   const opts: Required<GenerateOptions> = { ...DEFAULT_OPTS, ...options }
+  const fallback = getFallbackProviderName()
+  // A misconfigured fallback must not mask the real failure, and falling back
+  // to the provider that just failed would only double the latency.
+  const hasFallback = fallback !== 'off' && fallback !== name
 
   try {
-    return await callProvider(name, prompt, opts)
+    return await callProvider(name, prompt, opts, { bailOnRateLimit: hasFallback })
   } catch (primaryError) {
-    const fallback = getFallbackProviderName()
-    // A misconfigured fallback must not mask the real failure, and falling back
-    // to the provider that just failed would only double the latency.
-    if (fallback === 'off' || fallback === name) throw primaryError
+    if (!hasFallback) throw primaryError
     console.warn(
       `AI provider "${name}" failed, falling back to "${fallback}":`,
       primaryError instanceof Error ? primaryError.message : primaryError,

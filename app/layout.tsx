@@ -45,9 +45,19 @@ export const viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const lang = await getLang()
-  // Misconfigured AI_PROVIDER must not crash the whole layout — treat as off.
+  // A misconfigured AI_PROVIDER must not crash the whole layout — but it must
+  // not vanish either. Swallowing it produced a deploy where the coach simply
+  // never appeared, with nothing in the logs to say the value was rejected.
   let aiEnabled = false
-  try { aiEnabled = isAIEnabled() } catch { aiEnabled = false }
+  try {
+    aiEnabled = isAIEnabled()
+  } catch (err) {
+    console.error(
+      'AI coach disabled:',
+      err instanceof Error ? err.message : err,
+    )
+    aiEnabled = false
+  }
   return (
     <html lang={lang} className={`${sans.variable} ${serif.variable}`}>
       <body className="font-sans antialiased">
