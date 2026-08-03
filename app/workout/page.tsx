@@ -82,6 +82,11 @@ function byTimestamp(a: { ts?: string }, b: { ts?: string }): number {
   return String(a.ts || '').localeCompare(String(b.ts || ''))
 }
 
+/** Done = the athlete closed it, or it reached its planned set count. */
+function isExerciseFinished(ex: WorkoutExercise, closed: Set<string>): boolean {
+  return closed.has(ex.id) || ex.completedSets.length >= ex.targetSets
+}
+
 type WorkoutExercise = {
   id: string
   name: string
@@ -111,17 +116,18 @@ export default function WorkoutPage() {
   const [lastSavedSetId, setLastSavedSetId] = useState<string | null>(null)
   const [restSignal, setRestSignal] = useState(0)
   const [lastPr, setLastPr] = useState<PrResult | null>(null)
-  // Set when a set completes an exercise; identifies that completion uniquely.
+  // Set when the athlete declares an exercise finished; identifies that
+  // completion uniquely so the coach is asked once per exercise per session.
   const [debriefTrigger, setDebriefTrigger] = useState<string | null>(null)
+  // Exercises the athlete closed by hand. Reaching the target set count is not
+  // the same as being done: they may stop at 2 of 3, or add a fourth set.
+  const [closedExercises, setClosedExercises] = useState<Set<string>>(new Set())
   const prTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const carouselRef = useRef<HTMLDivElement>(null)
   // Holds the in-flight "find or create today's session" promise so two quick
   // taps reuse one request instead of racing into two sessions for one day.
   const sessionPromiseRef = useRef<Promise<any> | null>(null)
-  // Set by an explicit tap on the exercise carousel: auto-advance must never
-  // move the user off an exercise they chose on purpose.
-  const manualSelectionRef = useRef(false)
 
   const {
     sessions: sessionsState,
@@ -300,7 +306,7 @@ export default function WorkoutPage() {
 
   useEffect(() => {
     setActiveExIndex(0)
-    manualSelectionRef.current = false
+    setClosedExercises(new Set())
   }, [selectedDay])
 
   useEffect(() => { setLastPr(null) }, [activeExIndex])
@@ -386,7 +392,6 @@ export default function WorkoutPage() {
       if (!id) throw new Error('save set: missing id')
 
       const fullNewSet = { id, ...newSet }
-      const completedAfter = ex.completedSets.length + 1
       addSetOptimistic(fullNewSet)
       // `addSetOptimistic` is a no-op unless the slice already loaded; refetch so
       // the set the athlete just saved cannot go missing from the screen.
@@ -405,26 +410,40 @@ export default function WorkoutPage() {
 
       if (autoStartRest) setRestSignal(n => n + 1)
 
-      // Advance only on the set that actually completes the target, and never
-      // over an exercise the user selected by hand. The old effect re-ran on
-      // every change to workoutExercises, so any extra set on a finished
-      // exercise bounced the athlete somewhere else mid-workout.
-      if (completedAfter === ex.targetSets) {
-        // The natural pause: the exercise is done and they are about to walk to
-        // the next machine. Keyed by session+exercise so extra sets afterwards
-        // don't ask the coach again.
-        setDebriefTrigger(`${currentSession.id}:${ex.id}`)
-      }
-      if (!manualSelectionRef.current && completedAfter === ex.targetSets) {
-        const next = workoutExercises.findIndex(
-          (e, i) => i > exIndex && e.completedSets.length < e.targetSets
-        )
-        if (next !== -1) setActiveExIndex(next)
-      }
+      // Saving a set no longer moves the athlete anywhere, and no longer wakes
+      // the coach. Hitting the target set count is a guess about being done —
+      // the athlete says so explicitly with `finishExercise`. Auto-advancing on
+      // the last set also meant the coach read a stale `workoutExercises`, so
+      // its debrief was missing the very set that had just triggered it.
       return true
     } catch (e) {
       console.error('Failed to save set:', e)
       return false
+    }
+  }
+
+  /**
+   * The athlete declaring an exercise over. This is the only thing that wakes
+   * the coach and the only thing that moves the carousel: the app cannot tell
+   * a finished exercise from one that merely reached its planned set count.
+   */
+  function finishExercise(index: number) {
+    const ex = workoutExercises[index]
+    if (!ex || ex.completedSets.length === 0 || !session?.id) return
+
+    const closed = new Set(closedExercises).add(ex.id)
+    setClosedExercises(closed)
+    setDebriefTrigger(`${session.id}:${ex.id}`)
+
+    // Next exercise still owing work, scanning forward and wrapping around, so
+    // an exercise skipped earlier isn't stranded behind the current one.
+    const n = workoutExercises.length
+    for (let step = 1; step < n; step++) {
+      const i = (index + step) % n
+      if (!isExerciseFinished(workoutExercises[i], closed)) {
+        setActiveExIndex(i)
+        return
+      }
     }
   }
 
@@ -443,7 +462,6 @@ export default function WorkoutPage() {
     if (!ex) return
     setShowExercisePicker(false)
     setSearchQuery('')
-    manualSelectionRef.current = true
 
     // Already in today's list (from the plan or added earlier)? Jump to it
     // instead of appending a duplicate that would split the same exercise
@@ -480,6 +498,14 @@ export default function WorkoutPage() {
 
   const hasCompletedSets = workoutExercises.some(ex => ex.completedSets.length > 0)
   const activeEx = workoutExercises[activeExIndex]
+
+  /** The exercise the pending debrief is about — not the one now on screen. */
+  const debriefExercise = useMemo(() => {
+    if (!debriefTrigger) return undefined
+    const exId = debriefTrigger.slice(debriefTrigger.indexOf(':') + 1)
+    return workoutExercises.find(e => e.id === exId)
+  }, [debriefTrigger, workoutExercises])
+
   const totalSets = workoutExercises.reduce((acc, e) => acc + e.targetSets, 0)
   const doneSets = workoutExercises.reduce((acc, e) => acc + e.completedSets.length, 0)
 
@@ -532,13 +558,13 @@ export default function WorkoutPage() {
           <div ref={carouselRef} className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
             {workoutExercises.map((ex, i) => {
               const isActive = i === activeExIndex
-              const isDone = ex.completedSets.length >= ex.targetSets
+              const isDone = isExerciseFinished(ex, closedExercises)
               const isPending = !isActive && !isDone && ex.completedSets.length === 0
               return (
                 <button
                   key={`${ex.id}-${i}`}
                   data-active={isActive}
-                  onClick={() => { manualSelectionRef.current = true; setActiveExIndex(i) }}
+                  onClick={() => setActiveExIndex(i)}
                   className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full text-[12px] font-medium px-3 py-2 transition-all
                     ${isActive
                       ? 'bg-ink text-white'
@@ -641,11 +667,11 @@ export default function WorkoutPage() {
 
           <ExerciseDebrief
             trigger={debriefTrigger}
+            exerciseName={debriefExercise?.name}
             buildContext={() => {
               // Read from the exercise the trigger refers to, not the one now on
-              // screen: auto-advance may already have moved the athlete on.
-              const exId = debriefTrigger?.split(':')[1]
-              const ex = workoutExercises.find(e => e.id === exId)
+              // screen: finishing an exercise moves the athlete on.
+              const ex = debriefExercise
               if (!ex) return null
               return {
                 exerciseName: ex.name,
@@ -655,8 +681,13 @@ export default function WorkoutPage() {
                 targetReps: ex.targetReps,
                 targetRpe: ex.targetRpe,
                 offPlan: !ex.fromPlan,
-                exercisesDone: workoutExercises.filter(e => e.completedSets.length >= e.targetSets).length,
+                exercisesDone: workoutExercises.filter(e => isExerciseFinished(e, closedExercises)).length,
                 exercisesTotal: workoutExercises.length,
+                // The coach sees the whole session, growing with every exercise
+                // closed — not just the one that triggered this debrief.
+                sessionSoFar: workoutExercises
+                  .filter(e => e.completedSets.length > 0)
+                  .map(e => ({ exerciseName: e.name, sets: e.completedSets })),
                 sessions: sessionsState.data || [],
                 sets: setsState.data || [],
                 exercises,
@@ -718,6 +749,33 @@ export default function WorkoutPage() {
                 })}
               </div>
             </div>
+          )}
+
+          {/* Closing the exercise is a deliberate act: it is what asks the coach
+              for a debrief and what moves the carousel on. Reopening exists for
+              the athlete who decides to add one more set after all. */}
+          {activeEx.completedSets.length > 0 && (
+            closedExercises.has(activeEx.id) ? (
+              <button
+                onClick={() => setClosedExercises(prev => {
+                  const next = new Set(prev)
+                  next.delete(activeEx.id)
+                  return next
+                })}
+                className="btn-ghost text-sm w-full justify-center text-muted"
+              >
+                {t.workout.reopenExerciseBtn}
+              </button>
+            ) : (
+              <button
+                onClick={() => finishExercise(activeExIndex)}
+                className={`w-full justify-center py-3.5 rounded-full text-[14px] ${
+                  activeEx.completedSets.length >= activeEx.targetSets ? 'btn-primary' : 'btn'
+                }`}
+              >
+                <Check size={16} strokeWidth={2.2} /> {t.workout.finishExerciseBtn}
+              </button>
+            )
           )}
 
           {(() => {

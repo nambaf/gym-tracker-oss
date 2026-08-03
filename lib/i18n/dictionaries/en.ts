@@ -337,6 +337,8 @@ export const en: Dictionary = {
     setPrefix: 'Set',
     chipFailure: 'failure',
     removeExerciseBtn: 'Remove exercise from workout',
+    finishExerciseBtn: 'I\'m done with this exercise',
+    reopenExerciseBtn: 'Exercise closed · reopen to add sets',
     offPlanBadge: 'Off plan',
     prTitle: 'Personal record!',
     prKind: {

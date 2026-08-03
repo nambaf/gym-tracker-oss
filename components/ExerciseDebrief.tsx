@@ -12,6 +12,12 @@ type Props = {
    * triggers twice in one session even if extra sets are added afterwards.
    */
   trigger: string | null
+  /**
+   * Name of the exercise the debrief is about. Closing an exercise moves the
+   * athlete to the next one, so without it the card reads as a comment on
+   * whatever happens to be on screen.
+   */
+  exerciseName?: string
   buildContext: () => ExerciseDebriefContext | null
 }
 
@@ -23,7 +29,7 @@ type Props = {
  * If it fails, it fails silently — an absent comment is a non-event, an error
  * banner in the middle of a workout is not.
  */
-export default function ExerciseDebrief({ trigger, buildContext }: Props) {
+export default function ExerciseDebrief({ trigger, exerciseName, buildContext }: Props) {
   const t = useT()
   const aiEnabled = useAIEnabled()
   const [text, setText] = useState('')
@@ -57,7 +63,9 @@ export default function ExerciseDebrief({ trigger, buildContext }: Props) {
     <div className="rounded-2xl bg-ink text-white px-4 py-3 flex items-start gap-2.5">
       <MessageSquare size={14} strokeWidth={2.2} className="mt-0.5 shrink-0 opacity-70" />
       <div className="min-w-0 flex-1">
-        <div className="label !text-[9px] !text-white/50">{t.coach.debriefLabel}</div>
+        <div className="label !text-[9px] !text-white/50">
+          {t.coach.debriefLabel}{exerciseName ? ` · ${exerciseName}` : ''}
+        </div>
         {loading ? (
           <div className="flex items-center gap-1.5 mt-1" aria-live="polite">
             <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" />

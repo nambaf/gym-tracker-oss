@@ -215,6 +215,12 @@ export type ExerciseDebriefContext = {
     /** Whole-session progress, so the coach can pace what it says. */
     exercisesDone: number
     exercisesTotal: number
+    /**
+     * Every exercise touched today with its sets, in workout order. The coach
+     * used to see only the exercise that just ended, so it could not notice
+     * fatigue building across the session or a pattern spanning two exercises.
+     */
+    sessionSoFar?: Array<{ exerciseName: string; sets: SetEntry[] }>
     sessions: Session[]
     sets: SetEntry[]
     exercises: Exercise[]
@@ -263,6 +269,15 @@ export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise
         ? `Session progress: ${ctx.exercisesDone}/${ctx.exercisesTotal} exercises done`
         : `Avanzamento seduta: ${ctx.exercisesDone}/${ctx.exercisesTotal} esercizi completati`)
 
+    // The whole session up to now, not just the exercise that ended: what the
+    // athlete did in the first half is the only way to read the second half.
+    const soFar: string[] = []
+    for (const block of ctx.sessionSoFar || []) {
+        if (block.sets.length === 0) continue
+        soFar.push(block.exerciseName)
+        soFar.push(...block.sets.map((s, i) => `  ${i + 1}. ${describeSet(s, lang)}`))
+    }
+
     const athleteContext = buildAthleteContext({
         lang,
         sessions: ctx.sessions,
@@ -284,6 +299,7 @@ export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise
         athleteNotes: settings.athleteNotes,
         athleteContext,
         situation: lines.join('\n'),
+        sessionSoFar: soFar.join('\n'),
     }))
 }
 

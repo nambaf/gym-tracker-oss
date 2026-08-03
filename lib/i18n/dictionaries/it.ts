@@ -300,6 +300,8 @@ export type Dictionary = {
     setPrefix: string
     chipFailure: string
     removeExerciseBtn: string
+    finishExerciseBtn: string
+    reopenExerciseBtn: string
     offPlanBadge: string
     prTitle: string
     prKind: { 'e1rm': string; 'weight': string; 'reps-at-weight': string }
@@ -870,6 +872,8 @@ export const it: Dictionary = {
     setPrefix: 'Set',
     chipFailure: 'cedimento',
     removeExerciseBtn: 'Rimuovi esercizio dal workout',
+    finishExerciseBtn: 'Ho finito questo esercizio',
+    reopenExerciseBtn: 'Esercizio concluso · riapri per aggiungere set',
     offPlanBadge: 'Fuori piano',
     prTitle: 'Record personale!',
     prKind: {

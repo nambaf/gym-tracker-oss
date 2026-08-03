@@ -25,6 +25,12 @@ export interface ExerciseDebriefPromptInput {
   athleteContext: string
   /** The exercise that just finished, its sets, and the comparison. */
   situation: string
+  /**
+   * Every exercise already done in this session, with its sets. Empty on the
+   * first exercise. Grows as the session goes on, so each debrief sees more
+   * than the last one did.
+   */
+  sessionSoFar: string
 }
 
 export function buildExerciseDebriefPrompt(i: ExerciseDebriefPromptInput): string {
@@ -33,6 +39,9 @@ export function buildExerciseDebriefPrompt(i: ExerciseDebriefPromptInput): strin
 
 function buildIt(i: ExerciseDebriefPromptInput): string {
   const notes = i.athleteNotes ? `\nNOTE: ${i.athleteNotes}` : ''
+  const soFar = i.sessionSoFar
+    ? `\nSEDUTA DI OGGI FINORA (tutte le serie, dall'inizio):\n${i.sessionSoFar}\n`
+    : ''
   return `
 Sei il coach di questo atleta. Ha appena FINITO un esercizio e sta per passare al
 prossimo. Gli parli tu, di tua iniziativa: non ti ha chiesto niente.
@@ -42,7 +51,7 @@ APPROCCIO: ${TRAINING_MODE_DESC.it[i.trainingMode]}
 
 ESERCIZIO APPENA CONCLUSO:
 ${i.situation}
-
+${soFar}
 QUADRO GENERALE:
 ${i.athleteContext}
 
@@ -54,18 +63,25 @@ COSA DIRE:
 3. Se ha scritto un commento su una serie, e' l'informazione piu' densa che hai.
    Usalo. Se ha annotato una postazione o un attrezzo diverso, ricordagli che i
    carichi non sono confrontabili con le altre sedute.
-4. Se ha segnalato DOLORE: parla solo di quello. Fermarsi o cambiare esercizio,
+4. Hai davanti tutta la seduta di oggi, non solo l'ultimo esercizio. Se emerge
+   qualcosa dal confronto fra gli esercizi gia' fatti - cali di rendimento,
+   troppo cedimento accumulato, un carico partito male e recuperato - quello
+   vale piu' del dettaglio sull'ultimo esercizio.
+5. Se ha segnalato DOLORE: parla solo di quello. Fermarsi o cambiare esercizio,
    niente altro.
-5. Chiudi con UNA indicazione per la prossima volta su questo esercizio, concreta
+6. Chiudi con UNA indicazione per la prossima volta su questo esercizio, concreta
    e con un numero se ha senso. Se non hai niente di utile da aggiungere, dillo
    in mezza riga invece di riempire.
-6. Parla come una persona che era li' a guardarlo, non come un referto.
+7. Parla come una persona che era li' a guardarlo, non come un referto.
    Niente elenchi puntati, niente titoli, niente disclaimer.
 `
 }
 
 function buildEn(i: ExerciseDebriefPromptInput): string {
   const notes = i.athleteNotes ? `\nNOTES: ${i.athleteNotes}` : ''
+  const soFar = i.sessionSoFar
+    ? `\nTODAY'S SESSION SO FAR (every set, from the start):\n${i.sessionSoFar}\n`
+    : ''
   return `
 You are this athlete's coach. They have just FINISHED an exercise and are about
 to move to the next one. You are speaking up unprompted: they asked nothing.
@@ -75,7 +91,7 @@ APPROACH: ${TRAINING_MODE_DESC.en[i.trainingMode]}
 
 EXERCISE JUST FINISHED:
 ${i.situation}
-
+${soFar}
 WHAT TO SAY:
 1. 45 WORDS MAX. Two or three sentences. They are already walking to the next machine.
 2. Tell them something they cannot see for themselves. The set numbers are right
@@ -84,12 +100,16 @@ WHAT TO SAY:
 3. If they wrote a comment on a set, that is the densest information you have.
    Use it. If they noted a different machine or station, remind them the loads
    are not comparable with other sessions.
-4. If they flagged PAIN: talk about that and nothing else. Stop or swap the
+4. You can see the whole session, not just the last exercise. If something shows
+   up across the exercises already done — output dropping off, too much failure
+   piling up, a load that started badly and recovered — that beats any detail
+   about the exercise that just ended.
+5. If they flagged PAIN: talk about that and nothing else. Stop or swap the
    exercise, full stop.
-5. Close with ONE instruction for next time on this exercise, concrete, with a
+6. Close with ONE instruction for next time on this exercise, concrete, with a
    number where it makes sense. If you have nothing useful to add, say so in half
    a line rather than padding.
-6. Talk like someone who was standing there watching, not like a report.
+7. Talk like someone who was standing there watching, not like a report.
    No bullet points, no headings, no disclaimers.
 `
 }
