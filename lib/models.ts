@@ -17,6 +17,19 @@ export type Exercise = {
   primaryMuscles?: MuscleContribution[]
 }
 
+/**
+ * What a session row actually is. Absent on every row written before activity
+ * logging existed, which is why `normalizeSession` fills it in as `strength`.
+ */
+export type SessionKind = 'strength' | 'activity'
+
+/**
+ * Non-gym activity worth recording — a run, a ride, a match. Stored as a stable
+ * key, never as a label: the display names live in the dictionaries, the same
+ * way `MUSCLE_MAP` keys do.
+ */
+export type ActivityType = 'run' | 'bike' | 'swim' | 'walk' | 'sport' | 'other'
+
 export type Session = {
   id: string
   date: string
@@ -24,6 +37,12 @@ export type Session = {
   startTime?: string
   endTime?: string
   duration?: number
+  /** `activity` rows carry no sets and never count as a training session. */
+  kind?: SessionKind
+  activity?: ActivityType
+  distanceKm?: number
+  /** Perceived effort, same 1–5 scale the set rows use. */
+  effort?: IntensityLevel
 }
 
 /** Perceived intensity, 1 = very easy … 5 = very hard. Labels come from the dictionary. */

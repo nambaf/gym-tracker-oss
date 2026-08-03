@@ -31,6 +31,7 @@ export type Dictionary = {
     error: string
     retry: string
     save: string
+    saving: string
     cancel: string
     close: string
     delete: string
@@ -339,6 +340,27 @@ export type Dictionary = {
       adjustRpe: string
     }
   }
+  activity: {
+    title: string
+    subtitle: string
+    addBtn: string
+    emptyWeek: string
+    modalTitle: string
+    typeLabel: string
+    dateLabel: string
+    durationLabel: string
+    distanceLabel: string
+    effortLabel: string
+    noteLabel: string
+    notePlaceholder: string
+    saveBtn: string
+    minutesShort: string
+    effortShort: string
+    errorDuration: string
+    errorSave: string
+    /** Keys are stored values (`Session.activity`), not free text. */
+    types: { run: string; bike: string; swim: string; walk: string; sport: string; other: string }
+  }
   plan: {
     untitledPlan: string
     selectorEmpty: string
@@ -568,6 +590,7 @@ export const it: Dictionary = {
     error: 'Errore',
     retry: 'Riprova',
     save: 'Salva',
+    saving: 'Salvataggio…',
     cancel: 'Annulla',
     close: 'Chiudi',
     delete: 'Elimina',
@@ -913,6 +936,29 @@ export const it: Dictionary = {
       adjustSets: '{exercise} ({day}): da {from} a {to} serie',
       moveExercise: 'Sposta {exercise} dal {from} al {to}',
       adjustRpe: 'Abbassa l\'RPE target da {from} a {to} su {n} esercizi',
+    },
+  },
+  activity: {
+    title: 'Attività extra',
+    subtitle: 'Corsa, bici, tutto quello che non è palestra',
+    addBtn: 'Registra attività',
+    emptyWeek: 'Niente questa settimana.',
+    modalTitle: 'Registra attività',
+    typeLabel: 'Tipo',
+    dateLabel: 'Giorno',
+    durationLabel: 'Durata (min)',
+    distanceLabel: 'Distanza (km)',
+    effortLabel: 'Sforzo percepito',
+    noteLabel: 'Nota',
+    notePlaceholder: 'Come è andata…',
+    saveBtn: 'Salva attività',
+    minutesShort: 'min',
+    effortShort: 'sforzo',
+    errorDuration: 'Inserisci una durata in minuti.',
+    errorSave: 'Non sono riuscito a salvare l\'attività.',
+    types: {
+      run: 'Corsa', bike: 'Bici', swim: 'Nuoto',
+      walk: 'Camminata', sport: 'Sport', other: 'Altro',
     },
   },
   plan: {

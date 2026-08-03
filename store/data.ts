@@ -26,6 +26,7 @@ interface DataStore {
   setDeloadActive: (active: boolean) => void
   setTrainingMode: (mode: TrainingMode) => void
   addSessionOptimistic: (session: Session) => void
+  removeSessionOptimistic: (sessionId: string) => void
   addSetOptimistic: (set: SetEntry) => void
   removeSetOptimistic: (setId: string) => void
   updateSessionOptimistic: (sessionId: string, updates: Partial<Session>) => void
@@ -177,6 +178,13 @@ export const useDataStore = create<DataStore>()((set, get) => ({
     const current = get().sessions
     if (current.status === 'success' && current.data) {
       set({ sessions: { ...current, data: [...current.data, session] } })
+    }
+  },
+
+  removeSessionOptimistic(sessionId: string) {
+    const current = get().sessions
+    if (current.status === 'success' && current.data) {
+      set({ sessions: { ...current, data: current.data.filter(s => s.id !== sessionId) } })
     }
   },
 

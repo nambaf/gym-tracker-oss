@@ -83,11 +83,31 @@ function normalizeSet(row: Record<string, any>): Record<string, any> {
   return out
 }
 
+const ACTIVITY_KEYS = new Set(['run', 'bike', 'swim', 'walk', 'sport', 'other'])
+
 function normalizeSession(row: Record<string, any>): Record<string, any> {
   const out = { ...row }
   const duration = num(row.duration)
   if (duration === undefined) delete out.duration
   else out.duration = duration
+
+  // Every row predating activity logging is a strength session. Filling `kind`
+  // in here means consumers can compare it directly instead of each one having
+  // to remember that `undefined` means "gym".
+  out.kind = row.kind === 'activity' ? 'activity' : 'strength'
+  if (out.kind === 'activity') {
+    out.activity = ACTIVITY_KEYS.has(String(row.activity)) ? String(row.activity) : 'other'
+    const km = num(row.distanceKm)
+    if (km === undefined || km <= 0) delete out.distanceKm
+    else out.distanceKm = km
+    const effort = num(row.effort)
+    if (effort !== undefined && effort >= 1 && effort <= 5) out.effort = effort
+    else delete out.effort
+  } else {
+    delete out.activity
+    delete out.distanceKm
+    delete out.effort
+  }
   return out
 }
 

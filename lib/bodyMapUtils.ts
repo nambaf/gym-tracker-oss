@@ -1,6 +1,11 @@
 import type { Exercise, PlanRow, Session, SetEntry, MuscleContribution } from './models'
 import { epley1RM } from './progress'
 import { buildExerciseBests, relativeIntensity } from './records'
+// Activity rows (runs, rides) live in the `sessions` table but carry no sets.
+// Filtering them here rather than at each call site keeps the session counts
+// these functions report — `DailyIntensityData.sessions` above all — honest on
+// a day where the athlete both ran and lifted.
+import { strengthSessions } from './sessions'
 
 /**
  * Binary threshold for set counting: a muscle with ≥ 40% contribution counts
@@ -212,7 +217,7 @@ export function getActualWeeklyVolume(
 ): Map<MuscleGroup, { sets: number; volume: number }> {
   const muscleData = new Map<MuscleGroup, { sets: number; volume: number }>()
 
-  const weekSessions = sessions.filter(s => {
+  const weekSessions = strengthSessions(sessions).filter(s => {
     const d = new Date(s.date)
     return d >= weekStart && d <= weekEnd
   })
@@ -366,7 +371,7 @@ export function getWeeklyVolumeData(
     sunday.setDate(weekStart.getDate() + 6)
     sunday.setHours(23, 59, 59, 999)
 
-    const weekSessions = sessions.filter(s => {
+    const weekSessions = strengthSessions(sessions).filter(s => {
       const d = new Date(s.date)
       return d >= weekStart && d <= sunday
     })
@@ -454,7 +459,7 @@ export function getMissingExercises(
     planByExercise.set(planRow.exerciseId, existing)
   }
 
-  const weekSessions = sessions.filter(s => {
+  const weekSessions = strengthSessions(sessions).filter(s => {
     const d = new Date(s.date)
     return d >= weekStart && d <= weekEnd
   })
@@ -545,7 +550,7 @@ export function getDailyIntensityData(
     date.setDate(now.getDate() - i)
     date.setHours(0, 0, 0, 0)
 
-    const daySessions = sessions.filter(s => {
+    const daySessions = strengthSessions(sessions).filter(s => {
       const sDate = new Date(s.date)
       sDate.setHours(0, 0, 0, 0)
       return sDate.getTime() === date.getTime()

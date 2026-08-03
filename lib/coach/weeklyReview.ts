@@ -13,6 +13,7 @@ import type { Exercise, PlanRow, Session, SetEntry } from '../models'
 import type { MuscleGroup } from '../bodyMapUtils'
 import { MUSCLE_CONTRIBUTION_THRESHOLD, normalizeMuscle, parsePrimaryMuscles } from '../bodyMapUtils'
 import { isFailureSet } from '../setNotes'
+import { activitySessions, strengthSessions } from '../sessions'
 import { weekBounds } from '../dateUtils'
 import type { ThresholdsMatrix, TrainingMode } from '../settings/types'
 
@@ -47,6 +48,11 @@ export type WeeklyReview = {
   coverage: Array<{ muscle: MuscleGroup; sets: number; target: number | null }>
   perPlanDay: Array<{ day: string; plannedExercises: number; doneExercises: number }>
   offPlanExercises: string[]
+  /**
+   * Non-gym activities logged in the same week. Reported, never counted: they
+   * explain a heavy week without inflating adherence.
+   */
+  activities: Session[]
   findings: ReviewFinding[]
   proposals: ReviewProposal[]
 }
@@ -107,7 +113,12 @@ export function buildWeeklyReview(
 ): WeeklyReview | null {
   const { monday, sunday } = weekBounds(reference)
 
-  const weekSessions = sessions.filter(s => inRange(s.date, monday, sunday))
+  const inWeek = sessions.filter(s => inRange(s.date, monday, sunday))
+  const activities = activitySessions(inWeek)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  // Only training sessions feed the review's arithmetic. Activity rows carry no
+  // sets, so leaving them in would be harmless today and a trap tomorrow.
+  const weekSessions = strengthSessions(inWeek)
   const sessionIds = new Set(weekSessions.map(s => s.id))
   const weekSets = sets.filter(s => sessionIds.has(s.sessionId))
   if (weekSets.length === 0) return null
@@ -324,6 +335,7 @@ export function buildWeeklyReview(
     coverage,
     perPlanDay,
     offPlanExercises,
+    activities,
     findings,
     proposals: dedupedProposals,
   }

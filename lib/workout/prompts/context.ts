@@ -16,6 +16,8 @@ import type { Lang } from '../../i18n'
 import { commentOf, intensityOf, isFailureSet, INTENSITY_KEYS } from '../../setNotes'
 import { getExerciseProgress } from '../../deload'
 import { buildWeeklyReview, type WeeklyReview } from '../../coach/weeklyReview'
+import { activityMinutes, activitySessions } from '../../sessions'
+import { weekBounds } from '../../dateUtils'
 import type { ThresholdsMatrix, TrainingMode } from '../../settings/types'
 
 /** Cap on how much athlete prose reaches the prompt, newest first. */
@@ -34,6 +36,12 @@ const L = {
     improving: 'in crescita', stable: 'fermo', declining: 'in calo',
     notes: 'PAROLE DELL\'ATLETA (dalle sue note, dalla piu\' recente)',
     intents: 'COSA SI ERA RIPROMESSO',
+    activities: 'ALTRE ATTIVITA\' DELLA SETTIMANA (non contano come sedute, ma pesano sul recupero)',
+    activityLabels: {
+      run: 'corsa', bike: 'bici', swim: 'nuoto', walk: 'camminata',
+      sport: 'sport', other: 'altro',
+    },
+    effort: 'sforzo',
     flags: 'segnalazioni',
     none: 'nessuno',
     flagLabels: { pain: 'dolore', technique: 'tecnica sporca', interrupted: 'serie interrotta', fatigued: 'gia\' stanco' },
@@ -51,6 +59,12 @@ const L = {
     improving: 'improving', stable: 'flat', declining: 'declining',
     notes: 'THE ATHLETE\'S OWN WORDS (from their notes, most recent first)',
     intents: 'WHAT THEY TOLD THEMSELVES TO DO',
+    activities: 'OTHER ACTIVITY THIS WEEK (does not count as a session, but costs recovery)',
+    activityLabels: {
+      run: 'run', bike: 'ride', swim: 'swim', walk: 'walk',
+      sport: 'sport', other: 'other',
+    },
+    effort: 'effort',
     flags: 'flags',
     none: 'none',
     flagLabels: { pain: 'pain', technique: 'sloppy form', interrupted: 'cut short', fatigued: 'already tired' },
@@ -130,6 +144,28 @@ export function buildAthleteContext(input: AthleteContextInput): string {
 
     const issues = review.findings.map(f => reviewFindingText(f, lang)).filter(Boolean)
     if (issues.length > 0) out.push('', d.issues, ...issues.map(s => `- ${s}`))
+  }
+
+  // Read straight from `sessions`, not from `review`: a week of nothing but
+  // running produces no review at all, and that is exactly the week where the
+  // coach most needs to know why the athlete never made it to the gym.
+  const { monday, sunday } = weekBounds(new Date())
+  const weekActivities = activitySessions(sessions).filter(s => {
+    const t = new Date(s.date).getTime()
+    return Number.isFinite(t) && t >= monday.getTime() && t <= sunday.getTime()
+  })
+  if (weekActivities.length > 0) {
+    out.push('', d.activities)
+    for (const a of weekActivities) {
+      const day = new Date(a.date).toLocaleDateString(lang === 'en' ? 'en-US' : 'it-IT', { weekday: 'long' })
+      const bits: string[] = [d.activityLabels[a.activity || 'other']]
+      const mins = activityMinutes(a)
+      if (mins) bits.push(`${mins} min`)
+      if (a.distanceKm) bits.push(`${a.distanceKm} km`)
+      if (a.effort) bits.push(`${d.effort} ${a.effort}/5`)
+      if (a.note) bits.push(`"${a.note}"`)
+      out.push(`- ${day}: ${bits.join(', ')}`)
+    }
   }
 
   // Per-exercise direction, for the exercises the plan actually contains.

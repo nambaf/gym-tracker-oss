@@ -16,6 +16,7 @@ import ExerciseDebrief from '@/components/ExerciseDebrief'
 import { Plan, PlanRow, IntensityLevel, NextIntent, SetFlag } from '@/lib/models'
 import { getRestPresetForExercise } from '@/lib/restTimerPresets'
 import { localDayKey } from '@/lib/dateUtils'
+import { strengthSessions } from '@/lib/sessions'
 import {
   DEFAULT_TARGET_SETS, DEFAULT_TARGET_REPS, DEFAULT_AUTO_START_REST_TIMER,
   DEFAULT_PROGRESSION_STEP_KG, DEFAULT_DELOAD_LOAD_FACTOR,
@@ -38,13 +39,17 @@ async function findOrCreateTodaySession(startTime?: string): Promise<any> {
   const sessionsRes = await fetch('/api/data/sessions')
   if (!sessionsRes.ok) throw new Error(`sessions ${sessionsRes.status}`)
   const sessions = await sessionsRes.json()
+  // Skip activity rows: a run logged this morning shares the date but has no
+  // sets, and attaching today's lifting to it would hide the workout from
+  // every count that filters activities out.
   const todaySession = Array.isArray(sessions)
-    ? sessions.find((s: any) => isSameLocalDay(s.date, today))
+    ? strengthSessions(sessions).find((s: any) => isSameLocalDay(s.date, today))
     : null
   if (todaySession) return todaySession
   const payload = {
     date: new Date().toISOString(),
     note: '',
+    kind: 'strength' as const,
     startTime: startTime || new Date().toISOString(),
   }
   const res = await fetch('/api/data/sessions', {
@@ -227,7 +232,8 @@ export default function WorkoutPage() {
   useEffect(() => {
     if (sessionsState.status !== 'success') return
     const today = localDayKey()
-    const existing = sessionsState.data?.find((x: any) => isSameLocalDay(x.date, today)) || null
+    const existing = strengthSessions(sessionsState.data || [])
+      .find((x: any) => isSameLocalDay(x.date, today)) || null
     // Never downgrade a session we already hold: a reload of the sessions slice
     // that momentarily lacks the row just created would otherwise blank out the
     // active session, leaving the workout impossible to finish.

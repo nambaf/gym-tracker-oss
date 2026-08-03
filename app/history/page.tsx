@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { epley1RM } from '@/lib/progress'
 import { buildExerciseBests, relativeIntensity } from '@/lib/records'
 import { weekBounds, parseLocalDate, localDayKey } from '@/lib/dateUtils'
+import { activityMinutes, isActivitySession } from '@/lib/sessions'
 import { DEFAULT_MAX_HISTORY_MONTHS } from '@/lib/settings/defaults'
 import { useDataStore } from '@/store/data'
 import { VolumeChart } from '@/components/VolumeChart'
@@ -166,6 +167,21 @@ export default function HistoryPage() {
       .map(session => {
         // Scan order is arbitrary; sort so "first exercise" and set numbering
         // reflect the order the work was actually done in.
+        // Activities carry no sets, so the "nothing logged" guard below would
+        // drop them. They get a stripped-down entry instead of a full one.
+        if (isActivitySession(session)) {
+          return {
+            ...session,
+            isActivity: true as const,
+            volume: 0,
+            avgIntensity: null as number | null,
+            totalSets: 0,
+            exercises: [] as Array<{ id: string; name: string; sets: any[]; topSet: any }>,
+            muscleData: new Map(),
+            planDay: null as string | null,
+          }
+        }
+
         const sessionSets = currentSets
           .filter(s => s.sessionId === session.id)
           .sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')))
@@ -209,6 +225,7 @@ export default function HistoryPage() {
         const muscleData = calculateSessionMuscleStatus(sessionSets, exercisesList)
         return {
           ...session,
+          isActivity: false as const,
           volume: Math.round(volume),
           avgIntensity: intensityCount ? Math.round(intensitySum / intensityCount) : null,
           totalSets: sessionSets.length,
@@ -219,6 +236,8 @@ export default function HistoryPage() {
       })
       .filter((session): session is NonNullable<typeof session> => session !== null)
   }, [filteredSessions, setsState.data, exerciseNames, exercisesState.data, exToPlanDays, exerciseBests])
+
+  const trainingCount = sessionsWithStats.filter(s => !s.isActivity).length
 
   const [customError, setCustomError] = useState('')
 
@@ -345,7 +364,9 @@ export default function HistoryPage() {
 
         {selectedPeriod && (
           <div className="mt-3 text-xs text-muted">
-            {sessionsWithStats.length} {sessionsWithStats.length === 1 ? t.history.sessionsCountSingular : t.history.sessionsCountPlural}
+            {/* Counted over training sessions only — the label says "sessions",
+                and a run in the timeline is not one. */}
+            {trainingCount} {trainingCount === 1 ? t.history.sessionsCountSingular : t.history.sessionsCountPlural}
           </div>
         )}
       </section>
@@ -367,18 +388,30 @@ export default function HistoryPage() {
               const mm = String(date.getMinutes()).padStart(2, '0')
               const isFirst = idx === 0
 
-              const title = session.planDay
-                || (session.exercises[0]?.name ?? t.history.emptySession)
-              const subtitle = session.planDay
-                ? `${session.exercises.length} ${t.history.exercisesCount}`
-                : (session.exercises.length > 1
-                  ? `+${session.exercises.length - 1} ${t.history.moreExercises}`
-                  : null)
+              const title = session.isActivity
+                ? t.activity.types[session.activity || 'other']
+                : (session.planDay || (session.exercises[0]?.name ?? t.history.emptySession))
+              const subtitle = session.isActivity
+                ? t.activity.title
+                : session.planDay
+                  ? `${session.exercises.length} ${t.history.exercisesCount}`
+                  : (session.exercises.length > 1
+                    ? `+${session.exercises.length - 1} ${t.history.moreExercises}`
+                    : null)
+              const activityStats = session.isActivity
+                ? [
+                    activityMinutes(session) ? `${activityMinutes(session)} ${t.activity.minutesShort}` : null,
+                    session.distanceKm ? `${session.distanceKm} km` : null,
+                    session.effort ? `${t.activity.effortShort} ${session.effort}/5` : null,
+                  ].filter(Boolean) as string[]
+                : []
 
               return (
                 <article key={session.id} className="relative pl-8">
                   <div className={`absolute left-[3px] top-1 w-[10px] h-[10px] rounded-full
-                                  ${isFirst ? 'bg-accent-500' : 'bg-muted-2'}`} />
+                                  ${session.isActivity
+                                    ? 'bg-transparent border-2 border-muted-2'
+                                    : isFirst ? 'bg-accent-500' : 'bg-muted-2'}`} />
 
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
@@ -394,13 +427,21 @@ export default function HistoryPage() {
                         <div className="text-xs text-muted mt-0.5">{subtitle}</div>
                       )}
 
-                      <div className="flex gap-4 mt-2 text-[12px] text-muted">
-                        <span><span className="text-ink font-semibold num mr-0.5">{session.volume.toLocaleString(LOCALE[lang])}</span>kg·rep</span>
-                        <span><span className="text-ink font-semibold num mr-0.5">{session.totalSets}</span>{t.history.setsSuffix}</span>
-                        {session.avgIntensity != null && (
-                          <span><span className="text-ink font-semibold num mr-0.5">{session.avgIntensity}%</span>{t.history.intensitySuffix}</span>
-                        )}
-                      </div>
+                      {session.isActivity ? (
+                        activityStats.length > 0 && (
+                          <div className="flex gap-4 mt-2 text-[12px] text-muted num">
+                            {activityStats.map(s => <span key={s} className="text-ink-soft">{s}</span>)}
+                          </div>
+                        )
+                      ) : (
+                        <div className="flex gap-4 mt-2 text-[12px] text-muted">
+                          <span><span className="text-ink font-semibold num mr-0.5">{session.volume.toLocaleString(LOCALE[lang])}</span>kg·rep</span>
+                          <span><span className="text-ink font-semibold num mr-0.5">{session.totalSets}</span>{t.history.setsSuffix}</span>
+                          {session.avgIntensity != null && (
+                            <span><span className="text-ink font-semibold num mr-0.5">{session.avgIntensity}%</span>{t.history.intensitySuffix}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {session.muscleData.size > 0 && (

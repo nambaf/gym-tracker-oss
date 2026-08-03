@@ -1,8 +1,10 @@
 'use client'
 import Link from 'next/link'
 import WeeklyReviewCard from '@/components/WeeklyReviewCard'
+import ActivityLogger from '@/components/ActivityLogger'
 import { useEffect, useMemo } from 'react'
 import { useDataStore } from '@/store/data'
+import { strengthSessions } from '@/lib/sessions'
 import { BodyMap } from '@/components/BodyMap'
 import { calculateMuscleStatus, getMissingExercises } from '@/lib/bodyMapUtils'
 import { analyzePlanCompleteness } from '@/lib/planAnalysis'
@@ -215,7 +217,9 @@ export default function Dashboard() {
       return { weekSessions: [], weekSets: [], totalVolume: 0, sessionsCount: 0 }
     }
     const { monday, sunday } = getWeekBounds(new Date())
-    const weekSessions = (sessions.data || []).filter(s => {
+    // Activities are logged in the same table but are not training: counting a
+    // Wednesday run here would show 4 sessions on a 3-day plan.
+    const weekSessions = strengthSessions(sessions.data || []).filter(s => {
       const d = new Date(s.date)
       return d >= monday && d <= sunday
     })
@@ -245,7 +249,8 @@ export default function Dashboard() {
 
   const streakWeeks = useMemo(() => {
     if (sessions.status !== 'success') return 0
-    return calcStreakWeeks(sessions.data || [])
+    // A lifting streak: a week where the only entry was a run is a week off.
+    return calcStreakWeeks(strengthSessions(sessions.data || []))
   }, [sessions])
 
   const topLift = useMemo(() => {
@@ -272,7 +277,8 @@ export default function Dashboard() {
     if (plan.status !== 'success' || exercises.status !== 'success' ||
         sessions.status !== 'success' || sets.status !== 'success') return null
     return deriveNextWorkout(
-      plan.data || [], exercises.data || [], sessions.data || [], sets.data || [],
+      plan.data || [], exercises.data || [],
+      strengthSessions(sessions.data || []), sets.data || [],
     )
   }, [plan, exercises, sessions, sets])
 
@@ -388,6 +394,8 @@ export default function Dashboard() {
       </section>
 
       <BodyMap muscleData={muscleData} />
+
+      <ActivityLogger />
 
       {exercises.status === 'success' && plan.status === 'success' && planSummary.length > 0 && (
         <WorkoutAIChat
