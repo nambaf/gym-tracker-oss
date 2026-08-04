@@ -24,6 +24,13 @@ import { buildChatPrompt } from './prompts/chat'
 import { buildAlternativesPrompt } from './prompts/alternatives'
 import { buildExerciseDebriefPrompt } from './prompts/exerciseDebrief'
 import { buildAthleteContext } from './prompts/context'
+import {
+    buildSessionPlanBlock,
+    type PlannedExerciseState,
+    type PerformedExercise,
+    type SessionPosition,
+} from './prompts/sessionPlan'
+import { buildWeeklyReview } from '../coach/weeklyReview'
 import { commentOf, intensityOf, isFailureSet, INTENSITY_KEYS } from '../setNotes'
 import type { Prescription } from './prescription'
 
@@ -201,8 +208,36 @@ function describeSet(s: SetEntry, lang: Lang): string {
     return bits.join(' · ')
 }
 
+/**
+ * Where an exercise sat in the order of a given session, read off the set
+ * timestamps. Returns null when the exercise was not trained in that session.
+ */
+function positionInSession(
+    sets: SetEntry[],
+    sessionId: string,
+    exerciseId: string,
+): SessionPosition | null {
+    const order: string[] = []
+    for (const s of sets.filter(x => x.sessionId === sessionId)
+        .sort((a, b) => String(a.ts).localeCompare(String(b.ts)))) {
+        if (!order.includes(s.exerciseId)) order.push(s.exerciseId)
+    }
+    const idx = order.indexOf(exerciseId)
+    return idx === -1 ? null : { position: idx + 1, total: order.length }
+}
+
 export type ExerciseDebriefContext = {
     exerciseName: string
+    /** Needed to place the exercise in the plan and map it to muscle groups. */
+    exerciseId?: string
+    /** Plan day being trained, as stored on the rows. */
+    planDay?: string
+    /**
+     * Today's plan rows in planned order, with how far each one got. Without
+     * this the coach cannot tell a reshuffled session from a plan followed to
+     * the letter, and treats an exercise done last as if it had been done first.
+     */
+    plannedToday?: PlannedExerciseState[]
     /** Every set done on this exercise today, in order. */
     todaySets: SetEntry[]
     /** The same exercise in its previous session. */
@@ -220,7 +255,7 @@ export type ExerciseDebriefContext = {
      * used to see only the exercise that just ended, so it could not notice
      * fatigue building across the session or a pattern spanning two exercises.
      */
-    sessionSoFar?: Array<{ exerciseName: string; sets: SetEntry[] }>
+    sessionSoFar?: Array<{ exerciseId?: string; exerciseName: string; sets: SetEntry[] }>
     sessions: Session[]
     sets: SetEntry[]
     exercises: Exercise[]
@@ -278,6 +313,55 @@ export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise
         soFar.push(...block.sets.map((s, i) => `  ${i + 1}. ${describeSet(s, lang)}`))
     }
 
+    // ── Plan vs reality ──────────────────────────────────────────────────────
+    // The performed order comes from the set timestamps, never from the order
+    // the exercises appear on screen: the carousel keeps plan order even when
+    // the athlete worked through it in a completely different sequence.
+    const performed: PerformedExercise[] = (ctx.sessionSoFar || [])
+        .filter(b => b.exerciseId && b.sets.length > 0)
+        .map(b => ({
+            entry: {
+                exerciseId: b.exerciseId as string,
+                exerciseName: b.exerciseName,
+                setsDone: b.sets.length,
+            },
+            firstTs: b.sets.map(s => String(s.ts)).sort()[0] || '',
+        }))
+        .sort((a, b) => a.firstTs.localeCompare(b.firstTs))
+        .map(p => p.entry)
+
+    const currentId = ctx.exerciseId
+    const currentIdx = currentId ? performed.findIndex(p => p.exerciseId === currentId) : -1
+    const currentPosition: SessionPosition | null =
+        currentIdx === -1 ? null : { position: currentIdx + 1, total: performed.length }
+    // Same exercise, previous session: where it sat then. A load comparison
+    // between an opener and a closer is not a comparison.
+    const previousSessionId = ctx.previousSets[0]?.sessionId
+    const previousPosition = currentId && previousSessionId
+        ? positionInSession(ctx.sets, previousSessionId, currentId)
+        : null
+
+    const review = buildWeeklyReview(ctx.sessions, ctx.sets, ctx.exercises, ctx.plan, {
+        trainingMode,
+        thresholdsByMode: settings.thresholdsByMode,
+        maxFailurePct: settings.maxFailurePct,
+        targetRpeWhenReducing: settings.targetRpeWhenReducing,
+    })
+
+    const planContext = currentId
+        ? buildSessionPlanBlock({
+            lang,
+            planDay: ctx.planDay,
+            currentExerciseId: currentId,
+            planned: ctx.plannedToday || [],
+            performed,
+            currentPosition,
+            previousPosition,
+            exercises: ctx.exercises,
+            coverage: review?.coverage || [],
+        })
+        : ''
+
     const athleteContext = buildAthleteContext({
         lang,
         sessions: ctx.sessions,
@@ -300,6 +384,7 @@ export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise
         athleteContext,
         situation: lines.join('\n'),
         sessionSoFar: soFar.join('\n'),
+        planContext,
     }))
 }
 

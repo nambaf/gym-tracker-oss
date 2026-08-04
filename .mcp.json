@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "gym-tracker": {
+      "command": "./mcp/node_modules/.bin/tsx",
+      "args": ["./mcp/src/server.ts"],
+      "env": {
+        "AWS_PROFILE": "gymtracker-dev"
+      }
+    }
+  }
+}

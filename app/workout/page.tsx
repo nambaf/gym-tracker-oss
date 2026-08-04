@@ -681,6 +681,24 @@ export default function WorkoutPage() {
               if (!ex) return null
               return {
                 exerciseName: ex.name,
+                exerciseId: ex.id,
+                planDay: selectedDay,
+                // Today's plan in its own order, with how far each row got. The
+                // coach reads the reshuffles off this: a busy station turns a
+                // planned opener into a closer, and the loads follow.
+                plannedToday: workoutExercises
+                  .filter(e => e.fromPlan)
+                  .map((e, idx) => ({
+                    exerciseId: e.id,
+                    exerciseName: e.name,
+                    position: idx + 1,
+                    targetSets: e.targetSets,
+                    targetReps: e.targetReps,
+                    targetRpe: e.targetRpe,
+                    note: e.note,
+                    setsDone: e.completedSets.length,
+                    done: isExerciseFinished(e, closedExercises),
+                  })),
                 todaySets: ex.completedSets,
                 previousSets: previousSessionSetsFor(setsState.data || [], ex.id, session?.id),
                 targetSets: ex.targetSets,
@@ -693,7 +711,7 @@ export default function WorkoutPage() {
                 // closed — not just the one that triggered this debrief.
                 sessionSoFar: workoutExercises
                   .filter(e => e.completedSets.length > 0)
-                  .map(e => ({ exerciseName: e.name, sets: e.completedSets })),
+                  .map(e => ({ exerciseId: e.id, exerciseName: e.name, sets: e.completedSets })),
                 sessions: sessionsState.data || [],
                 sets: setsState.data || [],
                 exercises,
