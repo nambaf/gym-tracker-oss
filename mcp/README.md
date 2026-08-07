@@ -21,8 +21,20 @@ cd mcp && npm install
 ```
 
 Configuration is read from the repo's own `.env.local` / `.env`, so the table
-names can never drift from what the deployed app uses. AWS credentials come
-from the standard chain — set `AWS_PROFILE` in the client config below.
+names can never drift from what the deployed app uses. Set `AWS_PROFILE` in the
+client config below.
+
+**Credentials go through the AWS CLI**, not the SDK's own SSO resolution (see
+`src/credentials.ts` for why). So the CLI must be installed, and the SSO session
+must be live — `aws sso login --profile <name>` — or every tool call fails with
+a message telling you exactly that. Explicit `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY` in the environment take precedence and skip the CLI
+entirely.
+
+**Behind a corporate proxy**, set `HTTPS_PROXY` (and `NO_PROXY` as usual) in the
+client config. The SDK ignores those variables by default, which shows up as
+AWS calls hanging until timeout while `curl` to the same host answers instantly;
+`src/proxy.ts` wires them in. Nothing activates when they are unset.
 
 Verify it works before wiring any client:
 
@@ -56,8 +68,10 @@ using **absolute paths** (Claude Desktop does not run from the repo):
 }
 ```
 
-If the AWS profile is SSO-based, the session must be valid (`aws sso login
---profile <name>`) or every tool call fails with a credentials error.
+Claude Desktop is a GUI app: the process it spawns inherits a minimal `PATH`
+that does **not** include Homebrew. The CLI is therefore located explicitly
+(`/opt/homebrew/bin/aws`, `/usr/local/bin/aws`, `/usr/bin/aws`); set
+`AWS_CLI_PATH` in `env` if yours lives elsewhere.
 
 ## Tools
 

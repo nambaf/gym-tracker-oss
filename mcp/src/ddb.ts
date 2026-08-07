@@ -14,8 +14,21 @@ import { mergeWithDefaults } from '../../lib/settings/effective'
 import type { Exercise, Plan, Session, SetEntry } from '../../lib/models'
 import type { EffectiveSettings, Settings } from '../../lib/settings/types'
 import { DATASET_TTL_MS, REGION, TABLES } from './config'
+import { resolveCredentials } from './credentials'
+import { proxyRequestHandler } from './proxy'
 
-const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }))
+// Without this the SDK falls back to the EC2 metadata endpoint when credentials
+// fail to resolve, which on a laptop means minutes of silence and then a bare
+// `TimeoutError` that says nothing about the actual problem.
+process.env.AWS_EC2_METADATA_DISABLED = 'true'
+
+const endpointHost = `dynamodb.${REGION}.amazonaws.com`
+
+const client = DynamoDBDocumentClient.from(new DynamoDBClient({
+  region: REGION,
+  credentials: resolveCredentials,
+  requestHandler: proxyRequestHandler(endpointHost),
+}))
 
 /**
  * A single Scan returns at most 1 MB. Without following LastEvaluatedKey the
