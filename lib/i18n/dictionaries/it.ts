@@ -310,6 +310,11 @@ export type Dictionary = {
     finishBtn: string
     pickerTitle: string
     pickerPlaceholder: string
+    pickerUsualTitle: string
+    pickerSameMuscleTitle: string
+    pickerAllTitle: string
+    pickerEmpty: string
+    pickerInWorkout: string
   }
   coach: {
     title: string
@@ -908,6 +913,11 @@ export const it: Dictionary = {
     finishBtn: 'Termina allenamento',
     pickerTitle: 'Aggiungi esercizio',
     pickerPlaceholder: 'Cerca esercizio…',
+    pickerUsualTitle: 'Di solito aggiungi · {day}',
+    pickerSameMuscleTitle: 'Stesso muscolo · {muscle}',
+    pickerAllTitle: 'Tutti gli esercizi',
+    pickerEmpty: 'Nessun esercizio trovato',
+    pickerInWorkout: 'già oggi',
   },
   coach: {
     title: 'La tua settimana',

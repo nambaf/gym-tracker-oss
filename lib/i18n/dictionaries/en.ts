@@ -351,6 +351,11 @@ export const en: Dictionary = {
     finishBtn: 'Finish workout',
     pickerTitle: 'Add exercise',
     pickerPlaceholder: 'Search exercise…',
+    pickerUsualTitle: 'You usually add · {day}',
+    pickerSameMuscleTitle: 'Same muscle · {muscle}',
+    pickerAllTitle: 'All exercises',
+    pickerEmpty: 'No exercise found',
+    pickerInWorkout: 'already today',
   },
   coach: {
     title: 'Your week',

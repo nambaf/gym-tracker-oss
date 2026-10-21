@@ -24,7 +24,9 @@ import {
 import { parseRepTarget, repsForSet } from '@/lib/workout/repTarget'
 import { suggestNextLoad } from '@/lib/workout/prescription'
 import { detectPR, previousSessionSetsFor, type PrResult } from '@/lib/records'
-import { Check, Plus, X, Search, CheckCircle2, Trophy } from 'lucide-react'
+import ExercisePicker from '@/components/ExercisePicker'
+import { pickPlanDay } from '@/lib/workout/planDay'
+import { Check, Plus, CheckCircle2, Trophy } from 'lucide-react'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 
 /** True when `isoDate` falls on the same local calendar day as `dayKey`. */
@@ -115,7 +117,8 @@ export default function WorkoutPage() {
   const [activeExIndex, setActiveExIndex] = useState<number>(0)
   const [showSummary, setShowSummary] = useState(false)
   const [showExercisePicker, setShowExercisePicker] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [plansLoaded, setPlansLoaded] = useState(false)
+  const dayPickedRef = useRef(false)
   const [isFinishing, setIsFinishing] = useState(false)
 
   const [lastSavedSetId, setLastSavedSetId] = useState<string | null>(null)
@@ -221,13 +224,26 @@ export default function WorkoutPage() {
       const active = Array.isArray(plans) ? (plans.find(p => p.isActive) || plans[0]) : null
       const rows: PlanRow[] = active?.rows || []
       setPlanRows(rows)
-      const ds = sortDays(Array.from(new Set(rows.map(r => String(r.day)))).filter(Boolean))
-      setDays(ds)
-      const todayNames = todayCandidateNames()
-      const match = ds.find(d => todayNames.includes(d.toLowerCase())) || ds[0] || ''
-      setSelectedDay(match)
+      setDays(sortDays(Array.from(new Set(rows.map(r => String(r.day)))).filter(Boolean)))
+      setPlansLoaded(true)
     })()
   }, [loadSessions, loadSets, loadExercises, loadSettings])
+
+  // Choose the day once, when the history it depends on has arrived; after
+  // that the selection belongs to the athlete.
+  useEffect(() => {
+    if (dayPickedRef.current || days.length === 0) return
+    const settled = (s: { status: string }) => s.status === 'success' || s.status === 'error'
+    if (!settled(sessionsState) || !settled(setsState)) return
+    dayPickedRef.current = true
+    setSelectedDay(pickPlanDay({
+      days,
+      planRows,
+      sessions: sessionsState.status === 'success' ? sessionsState.data || [] : [],
+      sets: setsState.status === 'success' ? setsState.data || [] : [],
+      todayNames: todayCandidateNames(),
+    }))
+  }, [days, planRows, sessionsState, setsState])
 
   useEffect(() => {
     if (sessionsState.status !== 'success') return
@@ -467,7 +483,6 @@ export default function WorkoutPage() {
     const ex = exercises.find((e: any) => e.id === exId)
     if (!ex) return
     setShowExercisePicker(false)
-    setSearchQuery('')
 
     // Already in today's list (from the plan or added earlier)? Jump to it
     // instead of appending a duplicate that would split the same exercise
@@ -494,16 +509,9 @@ export default function WorkoutPage() {
     })
   }
 
-  const filteredExercises = useMemo(() => {
-    if (!searchQuery) return exercises
-    const q = searchQuery.toLowerCase()
-    return exercises.filter((e: any) =>
-      e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)
-    )
-  }, [exercises, searchQuery])
-
   const hasCompletedSets = workoutExercises.some(ex => ex.completedSets.length > 0)
   const activeEx = workoutExercises[activeExIndex]
+  const inWorkoutIds = useMemo(() => new Set(workoutExercises.map(e => e.id)), [workoutExercises])
 
   /** The exercise the pending debrief is about — not the one now on screen. */
   const debriefExercise = useMemo(() => {
@@ -599,6 +607,18 @@ export default function WorkoutPage() {
             </button>
           </div>
         </section>
+      )}
+
+      {/* The carousel above hosts the add button, but it only renders once the
+          day has exercises: a day with no plan rows had no way to add any. */}
+      {workoutExercises.length === 0 && plansLoaded && exercises.length > 0 && (
+        <button
+          onClick={() => setShowExercisePicker(true)}
+          className="w-full inline-flex items-center justify-center gap-1.5 rounded-full py-3.5
+                     text-[14px] font-medium text-muted border border-dashed border-ink/15"
+        >
+          <Plus size={14} strokeWidth={2.4} /> {t.workout.pickerTitle}
+        </button>
       )}
 
       {/* Active exercise focus */}
@@ -859,42 +879,19 @@ export default function WorkoutPage() {
         </button>
       </div>
 
-      {/* Exercise picker modal */}
       {showExercisePicker && (
-        <div className="modal-overlay" onClick={() => { setShowExercisePicker(false); setSearchQuery('') }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="display text-2xl">{t.workout.pickerTitle}</h3>
-                <button
-                  onClick={() => { setShowExercisePicker(false); setSearchQuery('') }}
-                  className="btn-icon"
-                ><X size={16} /></button>
-              </div>
-              <div className="relative">
-                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-                <input
-                  className="input pl-10"
-                  placeholder={t.workout.pickerPlaceholder}
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  autoFocus
-                />
-              </div>
-            </div>
-            <div className="p-4 grid grid-cols-2 gap-2">
-              {filteredExercises.map((ex: any) => (
-                <button
-                  key={ex.id}
-                  className="btn text-sm text-left justify-start"
-                  onClick={() => addExerciseToWorkout(ex.id)}
-                >
-                  {ex.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <ExercisePicker
+          exercises={exercises}
+          sessions={sessionsState.status === 'success' ? sessionsState.data || [] : []}
+          sets={setsState.status === 'success' ? setsState.data || [] : []}
+          planRows={planRows}
+          days={days}
+          selectedDay={selectedDay}
+          inWorkoutIds={inWorkoutIds}
+          currentExerciseId={activeEx?.id}
+          onPick={addExerciseToWorkout}
+          onClose={() => setShowExercisePicker(false)}
+        />
       )}
 
       {showSummary && session?.id && (
