@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { useDataStore } from '@/store/data'
+import { useDataStore, SettingsNotLoadedError } from '@/store/data'
 import { mergeWithDefaults } from '@/lib/settings/effective'
 import type { TrainingMode } from '@/lib/hypertrophyThresholds'
 import type { Settings, ThresholdsMatrix, RecommendedSetsMatrix } from '@/lib/settings/types'
@@ -82,115 +82,114 @@ function formatSec(sec: number): string {
 
 export default function ProfilePage() {
   const t = useT()
-  const { storedSettings, loadSettings, setSettings } = useDataStore()
+  const { storedSettings, settingsStatus, loadSettings, setSettings } = useDataStore()
   const [form, setForm] = useState<ProfileForm>(() => deriveForm(storedSettings))
   const [saving, setSaving] = useState(false)
+  // True while this page's own write is in flight. The store updates
+  // `storedSettings` optimistically and rolls it back on failure; re-deriving
+  // the form from either would throw away what the user typed.
+  const writing = useRef(false)
+
+  // Until the row has been read the form only shows defaults, and saving it
+  // would overwrite the real row with them.
+  const loaded = settingsStatus === 'success'
+  const loadFailed = settingsStatus === 'error'
+  const locked = !loaded || saving
 
   useEffect(() => {
     loadSettings()
   }, [loadSettings])
 
-  // Re-sync the form when storedSettings changes (load completes, or reset clears overrides).
+  // Re-sync the form when storedSettings changes (load completes).
   useEffect(() => {
+    if (writing.current) return
     setForm(deriveForm(storedSettings))
   }, [storedSettings])
 
-  async function handleSave() {
-    if (saving) return
+  /** Writes a patch; reports the real outcome. The form is re-derived only on success. */
+  async function persist(patch: Partial<Settings>) {
+    if (writing.current || !loaded) return
+    writing.current = true
     setSaving(true)
     try {
-      await setSettings({
-        athleteProfile: form.athleteProfile,
-        athleteNotes: form.athleteNotes,
-        trainingMode: form.trainingMode,
-        deloadActive: form.deloadActive,
-        autoStartRestTimer: form.autoStartRestTimer,
-        maxSetsPerSessionPerMuscle: form.maxSetsPerSessionPerMuscle,
-        defaultTargetSets: form.defaultTargetSets,
-        defaultTargetReps: form.defaultTargetReps,
-        progressionStepKg: form.progressionStepKg,
-        deloadLoadFactor: form.deloadLoadFactor,
-        maxFailurePct: form.maxFailurePct,
-        targetRpeWhenReducing: form.targetRpeWhenReducing,
-        progressWindowWeeks: form.progressWindowWeeks,
-        progressTrendThresholdPct: form.progressTrendThresholdPct,
-        maxHistoryMonths: form.maxHistoryMonths,
-        restCompoundSec: form.restCompoundSec,
-        restStandardSec: form.restStandardSec,
-        restIsolationSec: form.restIsolationSec,
-        compoundMuscles: parseMuscleList(form.compoundMuscles),
-        isolationMuscles: parseMuscleList(form.isolationMuscles),
-        thresholdsByMode: form.thresholdsByMode,
-        recommendedSets: form.recommendedSets,
-      })
+      await setSettings(patch)
+      setForm(deriveForm(useDataStore.getState().storedSettings))
       toast.success(t.profile.saved)
-    } catch (_e) {
-      toast.error(t.profile.errorGeneric)
+    } catch (e) {
+      toast.error(e instanceof SettingsNotLoadedError ? t.profile.settingsLoadFailed : t.common.saveFailed)
     } finally {
+      writing.current = false
       setSaving(false)
     }
   }
 
-  async function handleResetBasic() {
-    if (!confirm(t.profile.resetConfirm)) return
-    try {
-      await setSettings({
-        athleteProfile: undefined,
-        athleteNotes: undefined,
-        trainingMode: undefined,
-        deloadActive: undefined,
-        autoStartRestTimer: undefined,
-      })
-      toast.success(t.profile.saved)
-    } catch (_e) {
-      toast.error(t.profile.errorGeneric)
-    }
+  function handleSave() {
+    return persist({
+      athleteProfile: form.athleteProfile,
+      athleteNotes: form.athleteNotes,
+      trainingMode: form.trainingMode,
+      deloadActive: form.deloadActive,
+      autoStartRestTimer: form.autoStartRestTimer,
+      maxSetsPerSessionPerMuscle: form.maxSetsPerSessionPerMuscle,
+      defaultTargetSets: form.defaultTargetSets,
+      defaultTargetReps: form.defaultTargetReps,
+      progressionStepKg: form.progressionStepKg,
+      deloadLoadFactor: form.deloadLoadFactor,
+      maxFailurePct: form.maxFailurePct,
+      targetRpeWhenReducing: form.targetRpeWhenReducing,
+      progressWindowWeeks: form.progressWindowWeeks,
+      progressTrendThresholdPct: form.progressTrendThresholdPct,
+      maxHistoryMonths: form.maxHistoryMonths,
+      restCompoundSec: form.restCompoundSec,
+      restStandardSec: form.restStandardSec,
+      restIsolationSec: form.restIsolationSec,
+      compoundMuscles: parseMuscleList(form.compoundMuscles),
+      isolationMuscles: parseMuscleList(form.isolationMuscles),
+      thresholdsByMode: form.thresholdsByMode,
+      recommendedSets: form.recommendedSets,
+    })
   }
 
-  async function handleResetAdvanced() {
+  function handleResetBasic() {
     if (!confirm(t.profile.resetConfirm)) return
-    try {
-      await setSettings({
-        maxSetsPerSessionPerMuscle: undefined,
-        defaultTargetSets: undefined,
-        defaultTargetReps: undefined,
-        progressionStepKg: undefined,
-        deloadLoadFactor: undefined,
-        maxFailurePct: undefined,
-        targetRpeWhenReducing: undefined,
-        progressWindowWeeks: undefined,
-        progressTrendThresholdPct: undefined,
-        maxHistoryMonths: undefined,
-        restCompoundSec: undefined,
-        restStandardSec: undefined,
-        restIsolationSec: undefined,
-        compoundMuscles: undefined,
-        isolationMuscles: undefined,
-      })
-      toast.success(t.profile.saved)
-    } catch (_e) {
-      toast.error(t.profile.errorGeneric)
-    }
+    return persist({
+      athleteProfile: undefined,
+      athleteNotes: undefined,
+      trainingMode: undefined,
+      deloadActive: undefined,
+      autoStartRestTimer: undefined,
+    })
   }
 
-  async function handleResetThresholds() {
+  function handleResetAdvanced() {
     if (!confirm(t.profile.resetConfirm)) return
-    try {
-      await setSettings({ thresholdsByMode: undefined })
-      toast.success(t.profile.saved)
-    } catch (_e) {
-      toast.error(t.profile.errorGeneric)
-    }
+    return persist({
+      maxSetsPerSessionPerMuscle: undefined,
+      defaultTargetSets: undefined,
+      defaultTargetReps: undefined,
+      progressionStepKg: undefined,
+      deloadLoadFactor: undefined,
+      maxFailurePct: undefined,
+      targetRpeWhenReducing: undefined,
+      progressWindowWeeks: undefined,
+      progressTrendThresholdPct: undefined,
+      maxHistoryMonths: undefined,
+      restCompoundSec: undefined,
+      restStandardSec: undefined,
+      restIsolationSec: undefined,
+      compoundMuscles: undefined,
+      isolationMuscles: undefined,
+    })
   }
 
-  async function handleResetRecommendedSets() {
+  function handleResetThresholds() {
     if (!confirm(t.profile.resetConfirm)) return
-    try {
-      await setSettings({ recommendedSets: undefined })
-      toast.success(t.profile.saved)
-    } catch (_e) {
-      toast.error(t.profile.errorGeneric)
-    }
+    return persist({ thresholdsByMode: undefined })
+  }
+
+  function handleResetRecommendedSets() {
+    if (!confirm(t.profile.resetConfirm)) return
+    return persist({ recommendedSets: undefined })
   }
 
   const modes = Object.keys(t.trainingModes) as TrainingMode[]
@@ -201,6 +200,19 @@ export default function ProfilePage() {
         <h1 className="display text-3xl leading-tight">{t.profile.title}</h1>
         <p className="text-sm text-muted mt-2">{t.profile.subtitle}</p>
       </header>
+
+      {loadFailed && (
+        <div role="alert" className="card p-4 flex items-center justify-between gap-3">
+          <p className="text-sm text-danger">{t.profile.settingsLoadFailed}</p>
+          <button
+            type="button"
+            onClick={() => loadSettings(true)}
+            className="text-sm font-medium underline underline-offset-4 shrink-0"
+          >
+            {t.common.retry}
+          </button>
+        </div>
+      )}
 
       {/* LANGUAGE — writes cookie + reloads; unsaved form changes are lost */}
       <section className="card p-4">
@@ -214,7 +226,8 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={handleResetBasic}
-            className="text-xs text-muted hover:text-ink underline underline-offset-4"
+            disabled={locked}
+            className="text-xs text-muted hover:text-ink underline underline-offset-4 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {t.profile.resetSection}
           </button>
@@ -300,7 +313,8 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={handleResetAdvanced}
-            className="text-xs text-muted hover:text-ink underline underline-offset-4"
+            disabled={locked}
+            className="text-xs text-muted hover:text-ink underline underline-offset-4 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {t.profile.resetSection}
           </button>
@@ -525,7 +539,8 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={handleResetThresholds}
-              className="text-xs text-muted hover:text-ink underline underline-offset-4 shrink-0"
+              disabled={locked}
+              className="text-xs text-muted hover:text-ink underline underline-offset-4 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {t.profile.resetSection}
             </button>
@@ -552,7 +567,8 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={handleResetRecommendedSets}
-              className="text-xs text-muted hover:text-ink underline underline-offset-4 shrink-0"
+              disabled={locked}
+              className="text-xs text-muted hover:text-ink underline underline-offset-4 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {t.profile.resetSection}
             </button>
@@ -576,10 +592,10 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={locked}
             className="btn-primary text-sm disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {saving ? t.profile.saving : t.profile.save}
+            {saving ? t.profile.saving : settingsStatus === 'loading' || settingsStatus === 'idle' ? t.common.loading : t.profile.save}
           </button>
         </div>
       </div>

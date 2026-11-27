@@ -14,7 +14,9 @@ import type { MuscleGroup } from '../bodyMapUtils'
 import { MUSCLE_CONTRIBUTION_THRESHOLD, normalizeMuscle, parsePrimaryMuscles } from '../bodyMapUtils'
 import { isFailureSet } from '../setNotes'
 import { activitySessions, strengthSessions } from '../sessions'
-import { weekBounds } from '../dateUtils'
+import { localDayKey, weekBounds } from '../dateUtils'
+import { planDays } from '../plan/days'
+import { exercisesByDay, resolveSessionPlanDay } from '../workout/planDay'
 import type { ThresholdsMatrix, TrainingMode } from '../settings/types'
 
 export type ReviewSeverity = 'critical' | 'warning' | 'good'
@@ -57,6 +59,31 @@ export type WeeklyReview = {
   proposals: ReviewProposal[]
 }
 
+/**
+ * The athlete's own week, as absolute instants plus their timezone.
+ *
+ * Server actions run in UTC, where `weekBounds(new Date())` still answers
+ * "last week" until 02:00 on an Italian Monday. The browser states its week and
+ * the server uses it as given instead of working one out.
+ */
+export type ClientWeek = {
+  /** The instant the request was made. */
+  now: string
+  /** Monday 00:00 and Sunday 23:59:59.999 of the athlete's local week. */
+  start: string
+  end: string
+  /** IANA zone, so days can be told apart the way the athlete sees them. */
+  timeZone?: string
+}
+
+/** Call in the browser; pass the result to anything computed on the server. */
+export function clientWeek(now: Date = new Date()): ClientWeek {
+  const { monday, sunday } = weekBounds(now)
+  let timeZone: string | undefined
+  try { timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone } catch { /* stays undefined */ }
+  return { now: now.toISOString(), start: monday.toISOString(), end: sunday.toISOString(), timeZone }
+}
+
 export type WeeklyReviewOptions = {
   trainingMode: TrainingMode
   thresholdsByMode: ThresholdsMatrix
@@ -64,7 +91,37 @@ export type WeeklyReviewOptions = {
   maxFailurePct: number
   /** Rep-target RPE proposed when the failure share is too high. */
   targetRpeWhenReducing: number
+  /** `Plan.dayOrder` of the plan the rows come from; without it days follow `sortDays`. */
+  dayOrder?: string[]
+  /** Review exactly this week instead of the one containing `reference`. */
+  week?: Pick<ClientWeek, 'start' | 'end' | 'timeZone'>
 }
+
+/** The explicit range when it is usable, else the local week around `reference`. */
+export function reviewRange(week: WeeklyReviewOptions['week'], reference: Date = new Date()): { monday: Date; sunday: Date } {
+  if (week) {
+    const monday = new Date(week.start)
+    const sunday = new Date(week.end)
+    if (!Number.isNaN(monday.getTime()) && !Number.isNaN(sunday.getTime()) && monday <= sunday) {
+      return { monday, sunday }
+    }
+  }
+  return weekBounds(reference)
+}
+
+/** Calendar-day key in the athlete's zone when known, in the local one otherwise. */
+function dayKeyer(timeZone: string | undefined): (d: Date) => string {
+  if (timeZone) {
+    try {
+      // en-CA formats as YYYY-MM-DD.
+      const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+      return d => fmt.format(d)
+    } catch { /* unknown zone: fall through */ }
+  }
+  return localDayKey
+}
+
+const rowKey = (day: string, exerciseId: string) => `${day}\u0000${exerciseId}`
 
 function inRange(iso: string | undefined, start: Date, end: Date): boolean {
   if (!iso) return false
@@ -73,7 +130,7 @@ function inRange(iso: string | undefined, start: Date, end: Date): boolean {
 }
 
 /** Sets per muscle group, counting a set once for every muscle above threshold. */
-function coverageOf(sets: SetEntry[], exercises: Exercise[]): Map<MuscleGroup, number> {
+export function coverageOf(sets: SetEntry[], exercises: Exercise[]): Map<MuscleGroup, number> {
   const byId = new Map(exercises.map(e => [e.id, e]))
   const out = new Map<MuscleGroup, number>()
   for (const s of sets) {
@@ -111,7 +168,7 @@ export function buildWeeklyReview(
   opts: WeeklyReviewOptions,
   reference: Date = new Date()
 ): WeeklyReview | null {
-  const { monday, sunday } = weekBounds(reference)
+  const { monday, sunday } = reviewRange(opts.week, reference)
 
   const inWeek = sessions.filter(s => inRange(s.date, monday, sunday))
   const activities = activitySessions(inWeek)
@@ -124,16 +181,46 @@ export function buildWeeklyReview(
   if (weekSets.length === 0) return null
 
   const byId = new Map(exercises.map(e => [e.id, e]))
-  const trainedDays = new Set(weekSets.map(s => new Date(s.ts).toDateString()))
-  const doneExerciseIds = new Set(weekSets.map(s => s.exerciseId))
+  const byDay = exercisesByDay(planRows)
+  // A day kept in `dayOrder` with no exercises yet cannot be trained or skipped.
+  const days = planDays({ rows: planRows, dayOrder: opts.dayOrder }).filter(d => byDay.has(d))
+  const plannedIds = new Set(planRows.map(r => r.exerciseId))
 
-  const planDays = Array.from(new Set(planRows.map(r => String(r.day)).filter(Boolean)))
-  const perPlanDay = planDays.map(day => {
+  const idsBySession = new Map<string, Set<string>>()
+  for (const s of weekSets) {
+    const ids = idsBySession.get(s.sessionId)
+    if (ids) ids.add(s.exerciseId)
+    else idsBySession.set(s.sessionId, new Set([s.exerciseId]))
+  }
+
+  // Each session is credited to the one plan day it ran. Crediting an exercise
+  // to every day that lists it made a single session tick off two days at once.
+  const dayKey = dayKeyer(opts.week?.timeZone)
+  const trainedDays = new Set<string>()
+  const doneRows = new Set<string>()
+  const offPlanIds = new Set<string>()
+  for (const session of weekSessions) {
+    const ids = idsBySession.get(session.id)
+    if (!ids) continue
+    trainedDays.add(dayKey(new Date(session.date)))
+    const subs = session.substitutions || {}
+    // A substitute filled a planned slot: it is the plan being followed.
+    const standIns = new Set(Object.values(subs))
+    for (const id of ids) if (!plannedIds.has(id) && !standIns.has(id)) offPlanIds.add(id)
+    const day = resolveSessionPlanDay(session, ids, days, byDay)
+    if (!day) continue
+    for (const plannedId of byDay.get(day) || []) {
+      const actual = subs[plannedId]
+      if (ids.has(plannedId) || (actual && ids.has(actual))) doneRows.add(rowKey(day, plannedId))
+    }
+  }
+
+  const perPlanDay = days.map(day => {
     const planned = planRows.filter(r => String(r.day) === day)
     return {
       day,
       plannedExercises: planned.length,
-      doneExercises: planned.filter(r => doneExerciseIds.has(r.exerciseId)).length,
+      doneExercises: planned.filter(r => doneRows.has(rowKey(day, r.exerciseId))).length,
     }
   })
 
@@ -150,9 +237,7 @@ export function buildWeeklyReview(
     .sort((a, b) => b.doneExercises - a.doneExercises)
     .map(d => d.day)
 
-  const plannedIds = new Set(planRows.map(r => r.exerciseId))
-  const offPlanExercises = Array.from(doneExerciseIds)
-    .filter(id => !plannedIds.has(id))
+  const offPlanExercises = Array.from(offPlanIds)
     .map(id => byId.get(id)?.name || id)
     .sort()
 
@@ -239,7 +324,7 @@ export function buildWeeklyReview(
     const row = planRows
       .filter(r =>
         trainedDayNames.includes(String(r.day)) &&
-        doneExerciseIds.has(r.exerciseId) &&
+        doneRows.has(rowKey(String(r.day), r.exerciseId)) &&
         parsePrimaryMuscles(byId.get(r.exerciseId)?.primaryMuscles)
           .some(m => m.weight >= MUSCLE_CONTRIBUTION_THRESHOLD && normalizeMuscle(m.muscle) === c.muscle)
       )
@@ -259,7 +344,7 @@ export function buildWeeklyReview(
 
   // ── Lever 2: frequency and adherence ──────────────────────────────────────
   const sessionsDone = trainedDays.size
-  const sessionsPlanned = planDays.length
+  const sessionsPlanned = days.length
   if (sessionsPlanned > 0 && sessionsDone < sessionsPlanned) {
     findings.push({
       id: 'adherence-frequency',

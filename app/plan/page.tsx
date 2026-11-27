@@ -3,8 +3,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { useDataStore } from '@/store/data'
 import { analyzePlanCompleteness, analyzeSessionVolume, getCompletenessStatusBadge } from '@/lib/planAnalysis'
 import { WorkoutAIChat } from '@/components/WorkoutAIChat'
-import { sortDays } from '@/lib/dayUtils'
-import { ChevronDown, ChevronUp, Trash2, ArrowUp, ArrowDown, Plus, Check, AlertTriangle, MoreHorizontal, Copy, Star } from 'lucide-react'
+import MuscleChips from '@/components/MuscleChips'
+import { planDays } from '@/lib/plan/days'
+import { apiFetch, apiJson } from '@/lib/api'
+import { weekBounds } from '@/lib/dateUtils'
+import { strengthSessions } from '@/lib/sessions'
+import type { Exercise, PlanRow } from '@/lib/models'
+import { toast } from 'sonner'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2, ArrowUp, ArrowDown, Plus, Check, AlertTriangle, MoreHorizontal, Copy, Star } from 'lucide-react'
 import type { TrainingMode } from '@/lib/hypertrophyThresholds'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 import type { Lang } from '@/lib/i18n'
@@ -19,8 +25,6 @@ export type Row = {
   order?: number
   note?: string
 }
-export type Exercise = { id: string; name: string }
-
 type PlanItem = {
   id: string
   name: string
@@ -28,6 +32,7 @@ type PlanItem = {
   isActive: boolean
   description?: string
   rows: Row[]
+  dayOrder: string[]
 }
 
 const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
@@ -47,11 +52,53 @@ function interpolate(template: string, vars: Record<string, string | number>): s
   return template.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''))
 }
 
-/** "giorno 1" / "day 1" → "G1" / "D1". Otherwise first 3 chars uppercased. */
-function dayLabelFor(d: string, prefix: string): string {
-  const m = d.match(/^(?:giorno|day)\s+(\d+)$/i)
-  if (m) return `${prefix}${m[1]}`
-  return d.slice(0, 3).toUpperCase()
+function toPlanRow(r: Row): PlanRow {
+  return {
+    day: r.day, exerciseId: r.exerciseId, targetSets: r.targetSets,
+    targetReps: r.targetReps, targetRpe: r.targetRpe ?? undefined,
+  }
+}
+
+function normalizeRow(raw: unknown, fallbackIdx = 0): Row {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  return {
+    id: r.id && /^\d+$/.test(String(r.id)) ? String(r.id) : String(fallbackIdx + 1),
+    day: String(r.day ?? ''),
+    exerciseId: String(r.exerciseId ?? ''),
+    targetSets: Number(r.targetSets ?? 0),
+    targetReps: String(r.targetReps ?? ''),
+    targetRpe: r.targetRpe != null && r.targetRpe !== '' ? Number(r.targetRpe) : null,
+    order: r.order != null ? Number(r.order) : 0,
+    note: r.note ? String(r.note) : '',
+  }
+}
+
+/**
+ * Short labels for the day strip, unique within the plan.
+ *
+ * "Giorno 1" / "Day 1" → "G1" / "D1", anything else its first three letters.
+ * Labels that collide ("Giorno A" / "Giorno B" are both "GIO") get the start of
+ * their last word appended, and whatever still collides falls back to its
+ * 1-based position.
+ */
+function dayStripLabels(days: string[], prefix: string): string[] {
+  const short = days.map(d => {
+    const m = d.match(/^(?:giorno|day)\s+(\d+)$/i)
+    return m ? `${prefix}${m[1]}` : d.slice(0, 3).toUpperCase()
+  })
+  const withSuffix = days.map((d, i) => {
+    const words = d.trim().split(/\s+/)
+    if (words.length < 2) return short[i]
+    return `${words[0].slice(0, 3)} ${words[words.length - 1].slice(0, 3)}`.toUpperCase()
+  })
+  const isUnique = (labels: string[], i: number) => labels.indexOf(labels[i]) === labels.lastIndexOf(labels[i])
+
+  const labels = short.map((label, i) => (isUnique(short, i) ? label : withSuffix[i]))
+  return labels.map((label, i) => {
+    if (isUnique(labels, i)) return label
+    const positional = `${prefix}${i + 1}`
+    return labels.includes(positional) ? `#${i + 1}` : positional
+  })
 }
 
 export default function PlanPage() {
@@ -77,7 +124,7 @@ export default function PlanPage() {
   const [seedError, setSeedError] = useState<string | null>(null)
 
   const {
-    exercises, loadExercises, loadSettings,
+    exercises, loadExercises, loadSettings, loadPlan,
     deloadActive, setDeloadActive,
     trainingMode, setTrainingMode,
     sessions, sets, loadSessions, loadSets,
@@ -93,16 +140,23 @@ export default function PlanPage() {
     ;(async () => {
       setLoading(true)
       try {
-        const res = await fetch('/api/data/plans')
-        const plansRaw: any[] = res.ok ? await res.json() : []
-        const normalized: PlanItem[] = (Array.isArray(plansRaw) ? plansRaw : []).map(p => ({
-          id: String(p.id),
-          name: String(p.name || t.plan.untitledPlan),
-          createdAt: String(p.createdAt || new Date().toISOString()),
-          isActive: Boolean(p.isActive),
-          description: p.description ? String(p.description) : undefined,
-          rows: Array.isArray(p.rows) ? p.rows.map(normalizeRow) : [],
-        }))
+        const plansRaw = await apiJson<unknown>('/api/data/plans')
+        const list = (Array.isArray(plansRaw) ? plansRaw : []) as Record<string, unknown>[]
+        const normalized: PlanItem[] = list.map(p => {
+          const rows: Row[] = Array.isArray(p.rows) ? p.rows.map((r, i) => normalizeRow(r, i)) : []
+          const storedOrder = Array.isArray(p.dayOrder)
+            ? p.dayOrder.filter((d): d is string => typeof d === 'string')
+            : undefined
+          return {
+            id: String(p.id),
+            name: String(p.name || t.plan.untitledPlan),
+            createdAt: String(p.createdAt || new Date().toISOString()),
+            isActive: Boolean(p.isActive),
+            description: p.description ? String(p.description) : undefined,
+            rows,
+            dayOrder: planDays({ rows: rows.map(toPlanRow), dayOrder: storedOrder }),
+          }
+        })
 
         normalized.sort((a, b) => {
           if (a.isActive !== b.isActive) return a.isActive ? -1 : 1
@@ -112,13 +166,8 @@ export default function PlanPage() {
         if (canceled) return
         setPlans(normalized)
         const active = normalized.find(p => p.isActive) || normalized[0]
-        if (active) {
-          setSelectedPlanId(active.id)
-          applyPlanRows(active.rows)
-        } else {
-          setSelectedPlanId('')
-          applyPlanRows([])
-        }
+        setSelectedPlanId(active ? active.id : '')
+        applyPlan(active)
         setDirty(false)
       } catch {
         if (!canceled) setError(t.plan.errors.load)
@@ -129,23 +178,10 @@ export default function PlanPage() {
     return () => { canceled = true }
   }, [t.plan.errors.load, t.plan.untitledPlan])
 
-  function normalizeRow(r: any, fallbackIdx = 0): Row {
-    return {
-      id: r.id && /^\d+$/.test(String(r.id)) ? String(r.id) : String(fallbackIdx + 1),
-      day: String(r.day ?? ''),
-      exerciseId: String(r.exerciseId ?? ''),
-      targetSets: Number(r.targetSets ?? 0),
-      targetReps: String(r.targetReps ?? ''),
-      targetRpe: r.targetRpe != null && r.targetRpe !== '' ? Number(r.targetRpe) : null,
-      order: r.order != null ? Number(r.order) : 0,
-      note: r.note ? String(r.note) : '',
-    }
-  }
-
-  function applyPlanRows(planRows: Row[]) {
-    const reindexed = planRows.map((r, i) => ({ ...r, id: String(i + 1) }))
+  function applyPlan(plan: Pick<PlanItem, 'rows' | 'dayOrder'> | undefined) {
+    const reindexed = (plan?.rows ?? []).map((r, i) => ({ ...r, id: String(i + 1) }))
     setRows(reindexed)
-    setDays(sortDays(Array.from(new Set(reindexed.map(r => r.day))).filter(Boolean)))
+    setDays(planDays({ rows: reindexed.map(toPlanRow), dayOrder: plan?.dayOrder }))
   }
 
   function markDirty() { setDirty(true) }
@@ -161,7 +197,7 @@ export default function PlanPage() {
         throw new Error(body?.error || `HTTP ${res.status}`)
       }
       await loadExercises(true)
-    } catch (e) {
+    } catch {
       setSeedError(t.plan.seed.error)
     } finally {
       setSeeding(false)
@@ -169,51 +205,43 @@ export default function PlanPage() {
   }
 
   useEffect(() => {
-    if (days.length > 0 && !selectedDay) setSelectedDay(days[0])
-    if (days.length > 0 && selectedDay && !days.includes(selectedDay)) setSelectedDay(days[0])
+    if (!days.includes(selectedDay)) setSelectedDay(days[0] ?? '')
   }, [days, selectedDay])
 
-  const exNames = useMemo(
-    () => new Map((exercises.data || []).map((e: Exercise) => [e.id, e.name])),
+  const exById = useMemo(
+    () => new Map((exercises.data || []).map((e: Exercise) => [e.id, e])),
     [exercises.data]
+  )
+
+  const stripLabels = useMemo(
+    () => dayStripLabels(days, t.plan.dayLabelPrefix),
+    [days, t.plan.dayLabelPrefix]
   )
 
   const weeklyData = useMemo(() => {
     if (sessions.status !== 'success' || sets.status !== 'success') {
       return { weekSessions: [], weekSets: [] }
     }
-    const now = new Date()
-    const day = now.getDay()
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
-    const monday = new Date(now.setDate(diff)); monday.setHours(0, 0, 0, 0)
-    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); sunday.setHours(23, 59, 59, 999)
-    const weekSessions = (sessions.data || []).filter((s: any) => {
+    const { monday, sunday } = weekBounds()
+    const weekSessions = strengthSessions(sessions.data || []).filter(s => {
       const d = new Date(s.date)
       return d >= monday && d <= sunday
     })
-    const sessionIds = new Set(weekSessions.map((s: any) => s.id))
-    const weekSets = (sets.data || []).filter((s: any) => sessionIds.has(s.sessionId))
+    const sessionIds = new Set(weekSessions.map(s => s.id))
+    const weekSets = (sets.data || []).filter(s => sessionIds.has(s.sessionId))
     return { weekSessions, weekSets }
   }, [sessions, sets])
 
   const planSummary = useMemo(() => {
     if (exercises.status !== 'success' || rows.length === 0) return []
-    const planRows = rows.map(r => ({
-      day: r.day, exerciseId: r.exerciseId, targetSets: r.targetSets,
-      targetReps: r.targetReps, targetRpe: r.targetRpe ?? undefined,
-    }))
-    return analyzePlanCompleteness(planRows, exercises.data || [], trainingMode, {
+    return analyzePlanCompleteness(rows.map(toPlanRow), exercises.data || [], trainingMode, {
       recommendedSets: storedSettings.recommendedSets,
     })
   }, [rows, exercises, trainingMode, storedSettings.recommendedSets])
 
   const sessionWarnings = useMemo(() => {
     if (exercises.status !== 'success' || rows.length === 0) return []
-    const planRows = rows.map(r => ({
-      day: r.day, exerciseId: r.exerciseId, targetSets: r.targetSets,
-      targetReps: r.targetReps, targetRpe: r.targetRpe ?? undefined,
-    }))
-    return analyzeSessionVolume(planRows, exercises.data || [], {
+    return analyzeSessionVolume(rows.map(toPlanRow), exercises.data || [], {
       maxSetsPerSessionPerMuscle: storedSettings.maxSetsPerSessionPerMuscle,
     })
   }, [rows, exercises, storedSettings.maxSetsPerSessionPerMuscle])
@@ -223,7 +251,7 @@ export default function PlanPage() {
     const next = plans.find(p => p.id === id)
     if (!next) return
     setSelectedPlanId(id)
-    applyPlanRows(next.rows)
+    applyPlan(next)
     setSelectedDay('')
     setDirty(false)
     setPlanMenuOpen(false)
@@ -235,27 +263,27 @@ export default function PlanPage() {
       : t.plan.prompts.newPlanDefaultName
     const name = prompt(t.plan.prompts.askNewPlanName, baseName)?.trim()
     if (!name) return
-    const rowsForNew = opts.duplicate ? rows : []
     const newPlan: PlanItem = {
       id: newPlanId(),
       name,
       createdAt: new Date().toISOString(),
       isActive: false,
-      rows: rowsForNew,
+      rows: opts.duplicate ? rows : [],
+      dayOrder: opts.duplicate ? days : [],
     }
     setSaving(true)
     try {
-      await fetch('/api/data/plans', {
+      await apiFetch('/api/data/plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPlan),
       })
       setPlans(prev => [newPlan, ...prev])
       setSelectedPlanId(newPlan.id)
-      applyPlanRows(newPlan.rows)
+      applyPlan(newPlan)
       setDirty(false)
     } catch {
-      setError(t.plan.errors.create)
+      toast.error(t.common.saveFailed)
     } finally {
       setSaving(false)
       setPlanMenuOpen(false)
@@ -267,10 +295,11 @@ export default function PlanPage() {
     if (currentPlan.isActive) { setPlanMenuOpen(false); return }
     setSaving(true)
     try {
-      await fetch(`/api/data/plans/${currentPlan.id}/activate`, { method: 'POST' })
+      await apiFetch(`/api/data/plans/${currentPlan.id}/activate`, { method: 'POST' })
       setPlans(prev => prev.map(p => ({ ...p, isActive: p.id === currentPlan.id })))
+      void loadPlan(true)
     } catch {
-      setError(t.plan.errors.activate)
+      toast.error(t.common.saveFailed)
     } finally {
       setSaving(false)
       setPlanMenuOpen(false)
@@ -283,20 +312,15 @@ export default function PlanPage() {
     if (!confirm(interpolate(t.plan.prompts.askDelete, { name: currentPlan.name }))) return
     setSaving(true)
     try {
-      await fetch(`/api/data/plans/${currentPlan.id}`, { method: 'DELETE' })
+      await apiFetch(`/api/data/plans/${currentPlan.id}`, { method: 'DELETE' })
       const remaining = plans.filter(p => p.id !== currentPlan.id)
       setPlans(remaining)
       const nextActive = remaining.find(p => p.isActive) || remaining[0]
-      if (nextActive) {
-        setSelectedPlanId(nextActive.id)
-        applyPlanRows(nextActive.rows)
-      } else {
-        setSelectedPlanId('')
-        applyPlanRows([])
-      }
+      setSelectedPlanId(nextActive ? nextActive.id : '')
+      applyPlan(nextActive)
       setDirty(false)
     } catch {
-      setError(t.plan.errors.delete)
+      toast.error(t.common.saveFailed)
     } finally {
       setSaving(false)
       setPlanMenuOpen(false)
@@ -310,14 +334,14 @@ export default function PlanPage() {
     const updated = { ...currentPlan, name }
     setSaving(true)
     try {
-      await fetch(`/api/data/plans/${currentPlan.id}`, {
+      await apiFetch(`/api/data/plans/${currentPlan.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated),
       })
       setPlans(prev => prev.map(p => p.id === currentPlan.id ? updated : p))
     } catch {
-      setError(t.plan.errors.rename)
+      toast.error(t.common.saveFailed)
     } finally {
       setSaving(false)
       setPlanMenuOpen(false)
@@ -327,7 +351,7 @@ export default function PlanPage() {
   function addDayInline() {
     const name = newDayName.trim()
     if (!name) return
-    setDays(d => (d.includes(name) ? d : sortDays([...d, name])))
+    setDays(d => (d.includes(name) ? d : [...d, name]))
     setSelectedDay(name)
     setNewDayName('')
     setShowAddDay(false)
@@ -335,7 +359,7 @@ export default function PlanPage() {
   }
 
   function addItem(day: string) {
-    setDays(d => (d.includes(day) ? d : sortDays([...d, day])))
+    setDays(d => (d.includes(day) ? d : [...d, day]))
     setRows(r => {
       const dayRows = r.filter(row => row.day === day)
       const maxOrder = dayRows.length > 0 ? Math.max(...dayRows.map(row => row.order || 0)) : 0
@@ -379,9 +403,21 @@ export default function PlanPage() {
   function renameDay(oldName: string) {
     const name = prompt(t.plan.prompts.askRenameDay, oldName)?.trim()
     if (!name || name === oldName) return
-    setDays(d => sortDays(d.map(x => (x === oldName ? name : x))))
+    // Renaming onto an existing day merges the two: keep that day's slot.
+    setDays(d => (d.includes(name) ? d.filter(x => x !== oldName) : d.map(x => (x === oldName ? name : x))))
     setRows(r => r.map(row => (row.day === oldName ? { ...row, day: name } : row)))
     if (selectedDay === oldName) setSelectedDay(name)
+    markDirty()
+  }
+
+  function moveDay(name: string, dir: -1 | 1) {
+    const from = days.indexOf(name)
+    const to = from + dir
+    if (from === -1 || to < 0 || to >= days.length) return
+    const next = [...days]
+    next[from] = days[to]
+    next[to] = name
+    setDays(next)
     markDirty()
   }
 
@@ -399,20 +435,19 @@ export default function PlanPage() {
       setError(null)
       const payload: PlanItem = {
         ...currentPlan,
-        rows: rows.map(r => ({
-          ...r,
-          targetRpe: r.targetRpe ?? null as any,
-        })),
+        rows: rows.map(r => ({ ...r, targetRpe: r.targetRpe ?? null })),
+        dayOrder: days,
       }
-      await fetch(`/api/data/plans/${currentPlan.id}`, {
+      await apiFetch(`/api/data/plans/${currentPlan.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
       setPlans(prev => prev.map(p => p.id === currentPlan.id ? payload : p))
       setDirty(false)
+      void loadPlan(true)
     } catch {
-      setError(t.plan.errors.save)
+      toast.error(t.common.saveFailed)
     } finally {
       setSaving(false)
     }
@@ -545,40 +580,60 @@ export default function PlanPage() {
 
       {/* DAY STRIP */}
       <div className="-mx-5 px-5 overflow-x-auto no-scrollbar">
-        <div className="flex gap-2">
-          {days.map(d => {
+        <div className="flex items-start gap-2">
+          {days.map((d, i) => {
             const isActive = d === selectedDay
             const count = rows.filter(r => r.day === d).length
             return (
-              <button
-                key={d}
-                onClick={() => setSelectedDay(d)}
-                onDoubleClick={() => renameDay(d)}
-                className={`flex-shrink-0 w-[68px] py-3 rounded-2xl flex flex-col items-center gap-1 transition-all
-                  ${isActive
-                    ? 'bg-ink text-white'
-                    : count === 0
-                      ? 'bg-transparent border border-dashed border-ink/15 text-muted-2'
-                      : 'bg-paper-card border border-ink/[0.06] text-ink'
-                  }`}
-              >
-                <span className="text-[9px] uppercase tracking-[0.12em] font-bold opacity-80">
-                  {dayLabelFor(d, t.plan.dayLabelPrefix)}
-                </span>
-                <span className="display text-xl leading-none num">{count || '—'}</span>
-                <span className="text-[9px] font-semibold opacity-70">
-                  {count > 0 ? `${count} ${t.plan.dayStripExSuffix}` : t.plan.dayStripEmpty}
-                </span>
-              </button>
+              <div key={d} className="flex-shrink-0 w-[68px]">
+                <button
+                  onClick={() => setSelectedDay(d)}
+                  onDoubleClick={() => renameDay(d)}
+                  title={d}
+                  className={`w-full h-[76px] rounded-2xl flex flex-col items-center justify-center gap-1 transition-all
+                    ${isActive
+                      ? 'bg-ink text-white'
+                      : count === 0
+                        ? 'bg-transparent border border-dashed border-ink/15 text-muted-2'
+                        : 'bg-paper-card border border-ink/[0.06] text-ink'
+                    }`}
+                >
+                  <span className="text-[9px] uppercase tracking-[0.12em] font-bold opacity-80">
+                    {stripLabels[i]}
+                  </span>
+                  <span className="display text-xl leading-none num">{count || '—'}</span>
+                  <span className="text-[9px] font-semibold opacity-70">
+                    {count > 0 ? `${count} ${t.plan.dayStripExSuffix}` : t.plan.dayStripEmpty}
+                  </span>
+                </button>
+                {isActive && days.length > 1 && (
+                  <div className="flex justify-between mt-1">
+                    <button
+                      onClick={() => moveDay(d, -1)}
+                      disabled={i === 0}
+                      aria-label={t.plan.moveDayEarlier}
+                      title={t.plan.moveDayEarlier}
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-muted hover:bg-paper-card hover:text-ink disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    ><ChevronLeft size={16} /></button>
+                    <button
+                      onClick={() => moveDay(d, 1)}
+                      disabled={i === days.length - 1}
+                      aria-label={t.plan.moveDayLater}
+                      title={t.plan.moveDayLater}
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-muted hover:bg-paper-card hover:text-ink disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    ><ChevronRight size={16} /></button>
+                  </div>
+                )}
+              </div>
             )
           })}
           {!showAddDay ? (
             <button
               onClick={() => setShowAddDay(true)}
-              className="flex-shrink-0 w-[68px] rounded-2xl border border-dashed border-ink/15 text-muted-2 flex items-center justify-center"
+              className="flex-shrink-0 w-[68px] h-[76px] rounded-2xl border border-dashed border-ink/15 text-muted-2 flex items-center justify-center"
             ><Plus size={18} /></button>
           ) : (
-            <div className="flex-shrink-0 flex items-center gap-1 bg-paper-card rounded-2xl px-2 border border-ink/[0.06]">
+            <div className="flex-shrink-0 h-[76px] flex items-center gap-1 bg-paper-card rounded-2xl px-2 border border-ink/[0.06]">
               <input
                 value={newDayName}
                 onChange={e => setNewDayName(e.target.value)}
@@ -620,7 +675,7 @@ export default function PlanPage() {
               <div className="space-y-1.5 mt-3">
                 {sessionWarnings.slice(0, 3).map((w, i) => (
                   <div key={i} className="text-xs text-accent-600 bg-white/60 rounded-lg p-2">
-                    <strong>{w.day}</strong> · <strong>{t.muscles[w.muscleName] || w.muscleName}</strong>: {w.sets} {interpolate(t.plan.sessionWarningsLimit, { limit: w.limit })}
+                    <strong>{w.day}</strong> · <strong>{t.muscles[w.muscle] || w.muscleName}</strong>: {w.sets} {interpolate(t.plan.sessionWarningsLimit, { limit: w.limit })}
                   </div>
                 ))}
               </div>
@@ -636,7 +691,7 @@ export default function PlanPage() {
             {dayRows.length} {dayRows.length === 1 ? t.plan.exerciseSingular : t.plan.exercisePlural},{' '}
             <span className="italic text-muted">~{Math.round(dayStats.sets * 2.5)} {t.plan.minutesApprox}</span>
           </h3>
-          {dayRows.length > 0 && (
+          {selectedDay && (
             <button
               onClick={() => removeDay(selectedDay)}
               className="text-[11px] text-muted hover:text-danger transition-colors"
@@ -646,7 +701,8 @@ export default function PlanPage() {
 
         <div className="space-y-2">
           {dayRows.map((r) => {
-            const name = exNames.get(r.exerciseId)
+            const exercise = exById.get(r.exerciseId)
+            const name = exercise?.name
             const isExpanded = expandedRow === r.id
             return (
               <div key={r.id} className="card overflow-hidden">
@@ -665,6 +721,11 @@ export default function PlanPage() {
                       {r.targetSets} {t.plan.rowSets.toLowerCase()} · {r.targetReps} {t.plan.rowReps.toLowerCase()}
                       {r.targetRpe ? ` · ${t.plan.rowRpe} ${r.targetRpe}` : ''}
                     </div>
+                    {exercise?.primaryMuscles?.length ? (
+                      <div className="mt-1.5">
+                        <MuscleChips primaryMuscles={exercise.primaryMuscles} size="sm" />
+                      </div>
+                    ) : null}
                   </div>
                   {isExpanded ? <ChevronUp size={16} className="text-muted-2" /> : <ChevronDown size={16} className="text-muted-2" />}
                 </button>
@@ -791,7 +852,7 @@ export default function PlanPage() {
                   return (
                     <button
                       key={mode}
-                      onClick={() => setTrainingMode(mode)}
+                      onClick={async () => { if (!(await setTrainingMode(mode))) toast.error(t.common.saveFailed) }}
                       className={`p-2.5 rounded-xl text-left transition-all ${
                         trainingMode === mode
                           ? 'bg-ink text-white'
@@ -812,7 +873,7 @@ export default function PlanPage() {
                 <div className="text-xs text-muted mt-0.5">{t.plan.deloadDesc}</div>
               </div>
               <button
-                onClick={() => setDeloadActive(!deloadActive)}
+                onClick={async () => { if (!(await setDeloadActive(!deloadActive))) toast.error(t.common.saveFailed) }}
                 className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${
                   deloadActive ? 'bg-accent-500' : 'bg-ink/15'
                 }`}
@@ -839,6 +900,7 @@ export default function PlanPage() {
           weekSessions={weeklyData.weekSessions}
           weekSets={weeklyData.weekSets}
           trainingMode={trainingMode}
+          dayOrder={days}
         />
       )}
     </div>

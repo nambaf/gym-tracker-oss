@@ -63,6 +63,8 @@ server.registerTool(
       'The same weekly review the app shows on its dashboard: plan adherence, total sets and volume, ' +
       'share of sets taken to failure, sets per muscle group against the weekly target, untouched muscles, ' +
       'off-plan exercises, logged activities, and the coach findings/proposals. ' +
+      '`perPlanDay` is in plan order; each session is credited to the one plan day it ran, and an exercise ' +
+      'swapped in for a planned one counts as the planned one. ' +
       'Findings come back as dictionary keys plus values — state them in the user\'s language.',
     inputSchema: {
       weeksAgo: z.number().int().min(0).max(52).optional()
@@ -99,8 +101,9 @@ server.registerTool(
     title: 'Recent sessions',
     description:
       'The most recent sessions, newest first, each summarised per exercise (sets, top weight, reps per set, ' +
-      'failure sets, any comment the athlete left). Non-gym activities are included by default and are marked ' +
-      'with kind="activity" — they never count as training.',
+      'failure sets, any comment the athlete left), with the plan day it ran (`planDay`) and any exercise ' +
+      'swapped in for a planned one (`substitutions`). Non-gym activities are included by default and are ' +
+      'marked with kind="activity" — they never count as training.',
     inputSchema: {
       limit: z.number().int().min(1).max(50).optional().describe('Default 10.'),
       includeActivities: z.boolean().optional().describe('Default true.'),
@@ -116,8 +119,10 @@ server.registerTool(
   {
     title: 'Active training plan',
     description:
-      'The currently active plan: one prototype week, broken down by day, with target sets, rep ranges ' +
-      'and target RPE per exercise. Returns active=false when no plan is active.',
+      'The currently active plan: an ordered sequence of training days, each done once a week on whatever ' +
+      'calendar day the athlete can train — day labels are names, not weekdays, and `days` comes back in ' +
+      'the order they are trained. Each day lists target sets, rep ranges and target RPE per exercise. ' +
+      'Returns active=false when no plan is active.',
     inputSchema: {},
     annotations: { readOnlyHint: true },
   },

@@ -2,7 +2,8 @@
 import { useMemo } from 'react'
 import { isFailureSet } from '@/lib/setNotes'
 import { epley1RM } from '@/lib/progress'
-import { parsePrimaryMuscleNames } from '@/lib/bodyMapUtils'
+import type { MuscleGroup } from '@/lib/bodyMapUtils'
+import { countedMuscles } from '@/lib/workout/alternatives'
 import type { LoadState } from '@/lib/fetchJson'
 import type { Exercise } from '@/lib/models'
 import { useT } from '@/lib/i18n/I18nProvider'
@@ -36,7 +37,7 @@ export default function SessionSummary({
 
   const { volume, failureSets, totalSets, avgIntensity, musclesTop, perExercise } = useMemo(() => {
     let vol = 0, failureCount = 0, totalSetCount = 0, intSum = 0, intCount = 0
-    const muscleMap = new Map<string, number>()
+    const muscleMap = new Map<MuscleGroup | '_misc', number>()
     const perEx = new Map<string, { name: string; sets: number; failureSets: number; top: string; topE1: number }>()
 
     for (const s of sets) {
@@ -52,10 +53,11 @@ export default function SessionSummary({
       if (e1) { intSum += (w / e1); intCount++ }
 
       const ex = exById.get(s.exerciseId)
-      const muscles = parsePrimaryMuscleNames(ex?.primaryMuscles)
-      const share = muscles.length || 1
-      for (const m of (muscles.length ? muscles : ['_misc'])) {
-        muscleMap.set(m, (muscleMap.get(m) || 0) + (w * r) / share)
+      // Same rule as every other volume figure: the set counts in full for each
+      // muscle at or above the contribution threshold, and not at all below it.
+      const groups = Array.from(countedMuscles(ex).keys())
+      for (const m of (groups.length ? groups : ['_misc' as const])) {
+        muscleMap.set(m, (muscleMap.get(m) || 0) + w * r)
       }
 
       const cur = perEx.get(s.exerciseId) || {
@@ -77,7 +79,11 @@ export default function SessionSummary({
 
     const musclesTop = Array.from(muscleMap.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([m, v]) => ({ muscle: m === '_misc' ? t.sessionSummary.miscMuscle : m, volume: Math.round(v) }))
+      .map(([m, v]) => ({
+        key: m,
+        label: m === '_misc' ? t.sessionSummary.miscMuscle : (t.muscles[m] || m),
+        volume: Math.round(v),
+      }))
 
     return {
       volume: Math.round(vol),
@@ -87,7 +93,7 @@ export default function SessionSummary({
       musclesTop,
       perExercise: Array.from(perEx.values()),
     }
-  }, [sets, exById, t.sessionSummary.miscMuscle])
+  }, [sets, exById, t])
 
   if (setsState.status === 'loading' || exercisesState.status === 'loading') {
     return (
@@ -134,8 +140,8 @@ export default function SessionSummary({
           <div className="label mb-2">{t.sessionSummary.musclesTitle}</div>
           <ul className="text-sm grid sm:grid-cols-2 gap-1.5">
             {musclesTop.slice(0, 8).map(m => (
-              <li key={m.muscle} className="flex justify-between">
-                <span>{t.muscles[m.muscle] || m.muscle}</span>
+              <li key={m.key} className="flex justify-between">
+                <span>{m.label}</span>
                 <span className="text-muted num">{m.volume} kg·rep</span>
               </li>
             ))}

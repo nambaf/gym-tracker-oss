@@ -10,7 +10,9 @@ import { useDataStore } from '@/store/data'
 import { VolumeChart } from '@/components/VolumeChart'
 import { IntensityChart } from '@/components/IntensityChart'
 import { BodyMap } from '@/components/BodyMap'
-import type { PlanRow } from '@/lib/models'
+import { planDays } from '@/lib/plan/days'
+import { usePlanDayOrder } from '@/lib/usePlanDayOrder'
+import { exercisesByDay, resolveSessionPlanDay } from '@/lib/workout/planDay'
 import {
   calculateSessionMuscleStatus,
   getWeeklyVolumeData,
@@ -136,23 +138,13 @@ export default function HistoryPage() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [sessionsState.data, selectedPeriod])
 
-  /**
-   * exerciseId -> every plan day that contains it. The old map kept only the
-   * first day seen, so on an A/B split the second day never won a vote and
-   * every session was labelled with the first.
-   */
-  const exToPlanDays = useMemo(() => {
-    const map = new Map<string, Set<string>>()
-    if (planState.status !== 'success') return map
-    ;(planState.data || []).forEach((r: PlanRow) => {
-      if (!r.exerciseId || !r.day) return
-      const key = String(r.day)
-      const cur = map.get(r.exerciseId)
-      if (cur) cur.add(key)
-      else map.set(r.exerciseId, new Set([key]))
-    })
-    return map
-  }, [planState])
+  // The plan as `resolveSessionPlanDay` needs it — the same call the dashboard
+  // and the workout page make, so a session carries one label everywhere.
+  const dayOrder = usePlanDayOrder(planState.data)
+  const planIndex = useMemo(() => {
+    const rows = planState.status === 'success' ? planState.data || [] : []
+    return { days: planDays({ rows, dayOrder }), byDay: exercisesByDay(rows) }
+  }, [planState, dayOrder])
 
   /** Best e1RM per exercise across the whole history, for relative intensity. */
   const exerciseBests = useMemo(
@@ -179,6 +171,7 @@ export default function HistoryPage() {
             exercises: [] as Array<{ id: string; name: string; sets: any[]; topSet: any }>,
             muscleData: new Map(),
             planDay: null as string | null,
+            swaps: [] as string[],
           }
         }
 
@@ -188,7 +181,6 @@ export default function HistoryPage() {
         if (sessionSets.length === 0) return null
         let volume = 0, intensitySum = 0, intensityCount = 0
         const exerciseMap = new Map<string, { id: string; name: string; sets: any[]; topSet: any }>()
-        const dayVotes = new Map<string, Set<string>>()
         sessionSets.forEach(set => {
           const w = Number(set.weight), r = Number(set.reps)
           if (Number.isFinite(w) && Number.isFinite(r) && r > 0) volume += w * r
@@ -208,20 +200,17 @@ export default function HistoryPage() {
           if (epley1RM(w, r) > epley1RM(Number(entry.topSet.weight), Number(entry.topSet.reps))) {
             entry.topSet = set
           }
-
-          for (const day of exToPlanDays.get(set.exerciseId) || []) {
-            const seen = dayVotes.get(day)
-            if (seen) seen.add(set.exerciseId)
-            else dayVotes.set(day, new Set([set.exerciseId]))
-          }
         })
-        // Vote by distinct exercises matched, not by set count: an eight-set
-        // session on one exercise used to outvote four exercises of the day
-        // actually being trained.
-        const ranked = Array.from(dayVotes.entries()).sort((a, b) => b[1].size - a[1].size)
-        const planDay = ranked.length && (ranked.length === 1 || ranked[0][1].size > ranked[1][1].size)
-          ? ranked[0][0]
-          : null
+        const planDay = resolveSessionPlanDay(
+          session, new Set(exerciseMap.keys()), planIndex.days, planIndex.byDay,
+        )
+        // Only swaps that actually happened: a substitute picked and never
+        // logged left no trace worth reporting.
+        const swaps = Object.entries(session.substitutions || {})
+          .filter(([, actual]) => exerciseMap.has(actual))
+          .map(([planned, actual]) => t.history.substitutedFor
+            .replace('{actual}', exerciseNames.get(actual) || actual)
+            .replace('{planned}', exerciseNames.get(planned) || planned))
         const muscleData = calculateSessionMuscleStatus(sessionSets, exercisesList)
         return {
           ...session,
@@ -232,10 +221,11 @@ export default function HistoryPage() {
           exercises: Array.from(exerciseMap.values()),
           muscleData,
           planDay,
+          swaps,
         }
       })
       .filter((session): session is NonNullable<typeof session> => session !== null)
-  }, [filteredSessions, setsState.data, exerciseNames, exercisesState.data, exToPlanDays, exerciseBests])
+  }, [filteredSessions, setsState.data, exerciseNames, exercisesState.data, planIndex, exerciseBests, t])
 
   const trainingCount = sessionsWithStats.filter(s => !s.isActivity).length
 
@@ -470,6 +460,12 @@ export default function HistoryPage() {
                       <span className="chip">{t.history.morePrefix}{session.exercises.length - 4} {t.history.morePlural}</span>
                     )}
                   </div>
+
+                  {session.swaps.length > 0 && (
+                    <ul className="text-xs text-muted mt-2 space-y-0.5">
+                      {session.swaps.map(line => <li key={line}>{line}</li>)}
+                    </ul>
+                  )}
 
                   {session.note && (
                     <div className="text-xs text-muted mt-2 italic">{session.note}</div>

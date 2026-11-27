@@ -4,7 +4,15 @@ import type { Session, SetEntry, Exercise, Plan, PlanRow } from '@/lib/models'
 import type { TrainingMode } from '@/lib/hypertrophyThresholds'
 import type { Settings } from '@/lib/settings/types'
 import { mergeWithDefaults } from '@/lib/settings/effective'
-import { createLoader, createBatchLoader, createInitialState } from './utils'
+import { apiFetch, ApiError } from '@/lib/api'
+import {
+  createLoader, createSequencedLoader, createBatchLoader, createInitialState,
+  createSerialQueue, buildSettingsWrite, SettingsNotLoadedError,
+  type SettingsLoadStatus,
+} from './utils'
+
+export { SettingsNotLoadedError }
+export type { SettingsLoadStatus }
 
 interface DataStore {
   sessions: LoadState<Session[]>
@@ -13,6 +21,12 @@ interface DataStore {
   plan: LoadState<PlanRow[]>
   /** Raw `settings/global` row (sans defaults). Source-of-truth for writes. */
   storedSettings: Partial<Settings>
+  /**
+   * Whether `storedSettings` reflects the DB row. Anything other than
+   * `success` means the row is unknown: forms must not offer to save, and
+   * `setSettings` refuses to write.
+   */
+  settingsStatus: SettingsLoadStatus
   deloadActive: boolean
   trainingMode: TrainingMode
   loadSessions: (force?: boolean) => Promise<void>
@@ -22,9 +36,15 @@ interface DataStore {
   loadSettings: (force?: boolean) => Promise<void>
   loadAll: (force?: boolean) => Promise<void>
   invalidate: (tables?: string[]) => void
+  /**
+   * Merges `patch` into the row and writes it. Rejects — leaving the in-memory
+   * settings as they were — when the row could not be read
+   * (`SettingsNotLoadedError`) or the write failed.
+   */
   setSettings: (patch: Partial<Settings>) => Promise<void>
-  setDeloadActive: (active: boolean) => void
-  setTrainingMode: (mode: TrainingMode) => void
+  /** Resolve to `false` when nothing was saved (state is rolled back). Never reject. */
+  setDeloadActive: (active: boolean) => Promise<boolean>
+  setTrainingMode: (mode: TrainingMode) => Promise<boolean>
   addSessionOptimistic: (session: Session) => void
   removeSessionOptimistic: (sessionId: string) => void
   addSetOptimistic: (set: SetEntry) => void
@@ -74,12 +94,74 @@ function parseStoredSettings(data: any): Partial<Settings> {
   return out
 }
 
-export const useDataStore = create<DataStore>()((set, get) => ({
+const SETTINGS_URL = '/api/data/settings/global'
+const SETTINGS_TIMEOUT_MS = 20000
+
+/** `apiFetch` on the settings row with a timeout, so a stalled request cannot block the queue. */
+async function settingsRequest(init?: RequestInit): Promise<Response> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), SETTINGS_TIMEOUT_MS)
+  try {
+    return await apiFetch(SETTINGS_URL, { ...init, signal: ctrl.signal, cache: 'no-store' })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Reads the raw row. A row that does not exist yet is a legitimate empty
+ * state, not a failure: the API answers 200 with `null` (and a 404 is treated
+ * the same way). Anything else throws.
+ */
+async function readSettingsRow(): Promise<Record<string, unknown>> {
+  try {
+    const res = await settingsRequest()
+    const data = await res.json()
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {}
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return {}
+    throw e
+  }
+}
+
+// Loads and writes of `settings/global` run one at a time, in call order. A
+// write therefore always merges into a row that is fully read, and a response
+// to an older request can never land on top of a newer one.
+const settingsQueue = createSerialQueue()
+let pendingSettingsLoad: Promise<void> | null = null
+/** The row as last read or written, including attributes this client does not model. */
+let rawSettingsRow: Record<string, unknown> = {}
+
+export const useDataStore = create<DataStore>()((set, get) => {
+  /** Never rejects: the outcome is `settingsStatus`. */
+  async function runSettingsLoad(): Promise<void> {
+    if (get().settingsStatus !== 'success') set({ settingsStatus: 'loading' })
+    try {
+      const row = await readSettingsRow()
+      rawSettingsRow = row
+      const stored = parseStoredSettings(row)
+      const effective = mergeWithDefaults(stored)
+      set({
+        storedSettings: stored,
+        settingsStatus: 'success',
+        deloadActive: effective.deloadActive,
+        trainingMode: effective.trainingMode,
+      })
+    } catch (e) {
+      console.error('Failed to load settings:', e)
+      // A failed refresh keeps the row already held; only a row that was
+      // never read becomes an error.
+      if (get().settingsStatus !== 'success') set({ settingsStatus: 'error' })
+    }
+  }
+
+  return {
   sessions: createInitialState<Session>(),
   sets: createInitialState<SetEntry>(),
   exercises: createInitialState<Exercise>(),
   plan: createInitialState<PlanRow>(),
   storedSettings: {},
+  settingsStatus: 'idle' as SettingsLoadStatus,
   deloadActive: false,
   trainingMode: 'mixed' as TrainingMode,
 
@@ -101,33 +183,28 @@ export const useDataStore = create<DataStore>()((set, get) => ({
     (data) => set({ exercises: data })
   ),
 
-  loadPlan: async (force = false) => {
-    const current = get().plan
-    if (!force && (current.status === 'loading' || current.status === 'success')) return
-    set({ plan: { status: 'loading', startedAt: performance.now(), progress: 0 } })
-    try {
-      const rows = await fetchActivePlanRows()
-      set({ plan: { status: 'success', data: rows, progress: 100 } })
-    } catch (e: any) {
-      set({ plan: { status: 'error', error: e?.message || 'Failed to load plan' } })
-    }
-  },
+  loadPlan: createSequencedLoader<PlanRow>(
+    async (onUpdate) => {
+      onUpdate({ status: 'loading', startedAt: performance.now(), progress: 0 })
+      try {
+        const rows = await fetchActivePlanRows()
+        onUpdate({ status: 'success', data: rows, progress: 100 })
+      } catch (e: any) {
+        onUpdate({ status: 'error', error: e?.message || 'Failed to load plan' })
+      }
+    },
+    () => get().plan,
+    (data) => set({ plan: data })
+  ),
 
-  loadSettings: async () => {
-    try {
-      const res = await fetch('/api/data/settings/global')
-      if (!res.ok) return
-      const data = await res.json()
-      const stored = parseStoredSettings(data)
-      const effective = mergeWithDefaults(stored)
-      set({
-        storedSettings: stored,
-        deloadActive: effective.deloadActive,
-        trainingMode: effective.trainingMode,
-      })
-    } catch (e) {
-      console.error('Failed to load settings:', e)
-    }
+  loadSettings(force = false) {
+    if (pendingSettingsLoad && !force) return pendingSettingsLoad
+    if (get().settingsStatus !== 'success') set({ settingsStatus: 'loading' })
+    const request: Promise<void> = settingsQueue(runSettingsLoad).finally(() => {
+      if (pendingSettingsLoad === request) pendingSettingsLoad = null
+    })
+    pendingSettingsLoad = request
+    return request
   },
 
   loadAll: createBatchLoader([
@@ -147,31 +224,53 @@ export const useDataStore = create<DataStore>()((set, get) => ({
     set(updates)
   },
 
-  async setSettings(patch: Partial<Settings>) {
-    // Merge with the current stored row before writing — the API does a
-    // full-row PutItem, so sending only `patch` would wipe other fields.
-    const current = get().storedSettings
-    const merged: Partial<Settings> = { ...current, ...patch, id: 'global' }
-    const effective = mergeWithDefaults(merged)
-    set({
-      storedSettings: merged,
-      deloadActive: effective.deloadActive,
-      trainingMode: effective.trainingMode,
+  setSettings(patch: Partial<Settings>) {
+    // Queued behind any load in flight. The API does a full-row PutItem, so
+    // the patch is merged into the row as read; if the row could not be read
+    // there is nothing safe to merge into and the write is refused.
+    return settingsQueue(async () => {
+      if (get().settingsStatus !== 'success') await runSettingsLoad()
+      const state = get()
+      const write = buildSettingsWrite(state.settingsStatus, rawSettingsRow, state.storedSettings, patch)
+      if (!write) throw new SettingsNotLoadedError()
+
+      const previous = {
+        storedSettings: state.storedSettings,
+        deloadActive: state.deloadActive,
+        trainingMode: state.trainingMode,
+      }
+      const effective = mergeWithDefaults(write.stored)
+      set({
+        storedSettings: write.stored,
+        deloadActive: effective.deloadActive,
+        trainingMode: effective.trainingMode,
+      })
+      try {
+        await settingsRequest({
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(write.row),
+        })
+        rawSettingsRow = write.row
+      } catch (e) {
+        set(previous)
+        throw e
+      }
     })
-    const res = await fetch('/api/data/settings/global', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(merged),
-    })
-    if (!res.ok) throw new Error(`Failed to save settings: HTTP ${res.status}`)
   },
 
   setDeloadActive(active: boolean) {
-    get().setSettings({ deloadActive: active }).catch(e => console.error('setDeloadActive failed:', e))
+    return get().setSettings({ deloadActive: active }).then(
+      () => true,
+      e => { console.error('setDeloadActive failed:', e); return false }
+    )
   },
 
   setTrainingMode(mode: TrainingMode) {
-    get().setSettings({ trainingMode: mode }).catch(e => console.error('setTrainingMode failed:', e))
+    return get().setSettings({ trainingMode: mode }).then(
+      () => true,
+      e => { console.error('setTrainingMode failed:', e); return false }
+    )
   },
 
   addSessionOptimistic(session: Session) {
@@ -213,4 +312,5 @@ export const useDataStore = create<DataStore>()((set, get) => ({
       })
     }
   },
-}))
+  }
+})

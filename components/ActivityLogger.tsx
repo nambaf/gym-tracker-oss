@@ -12,8 +12,10 @@
  * `lib/sessions.ts` for why.
  */
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { Bike, Footprints, Plus, Trash2, Waves, Activity as ActivityIcon, Trophy, X } from 'lucide-react'
 import { useDataStore } from '@/store/data'
+import { apiFetch } from '@/lib/api'
 import { ACTIVITY_TYPES, activityMinutes, activitySessions } from '@/lib/sessions'
 import { weekBounds, localDayKey, parseLocalDate } from '@/lib/dateUtils'
 import type { ActivityType, IntensityLevel, Session } from '@/lib/models'
@@ -91,8 +93,7 @@ export default function ActivityLogger() {
     setSaving(true)
     setError('')
     try {
-      const res = await fetch('/api/data/sessions', { method: 'POST', body: JSON.stringify(payload) })
-      if (!res.ok) throw new Error(`save activity ${res.status}`)
+      const res = await apiFetch('/api/data/sessions', { method: 'POST', body: JSON.stringify(payload) })
       const { id } = await res.json()
       addSessionOptimistic({ id, ...payload } as Session)
       if (sessions.status !== 'success') loadSessions(true)
@@ -107,9 +108,18 @@ export default function ActivityLogger() {
   }
 
   async function remove(id: string) {
+    const removed = sessions.status === 'success' ? sessions.data?.find(s => s.id === id) : undefined
     removeSessionOptimistic(id)
-    try { await fetch(`/api/data/sessions/${id}`, { method: 'DELETE' }) }
-    catch (e) { console.error('Failed to delete activity:', e) }
+    try {
+      await apiFetch(`/api/data/sessions/${id}`, { method: 'DELETE' })
+    } catch (e) {
+      console.error('Failed to delete activity:', e)
+      // The row is still in the DB: put it back rather than let it reappear
+      // on the next reload. Skip if a reload already brought it back.
+      const current = useDataStore.getState().sessions
+      if (removed && !current.data?.some(s => s.id === id)) addSessionOptimistic(removed)
+      toast.error(t.common.saveFailed)
+    }
   }
 
   return (

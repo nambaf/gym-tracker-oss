@@ -32,18 +32,15 @@ export type Dictionary = {
     retry: string
     save: string
     saving: string
-    cancel: string
     close: string
     delete: string
     confirm: string
     add: string
-    edit: string
     today: string
     language: string
+    saveFailed: string
   }
   ai: {
-    notConfigured: string
-    notEnabled: string
     weeklyTitle: string
     weeklySubtitle: string
     planTitle: string
@@ -51,6 +48,9 @@ export type Dictionary = {
     greeting: string
     placeholder: string
     errorRetry: string
+    prefillWeekly: string
+    prefillLastNote: string
+    prefillPlan: string
     quickActions: {
       weekly: string[]
       plan: string[]
@@ -79,6 +79,7 @@ export type Dictionary = {
     emptyState: string
   }
   history: {
+    substitutedFor: string
     eyebrow: string
     titleLine1: string
     titleLine2: string
@@ -196,10 +197,6 @@ export type Dictionary = {
     badgeDeclining: string
   }
   setRow: {
-    recommendedFor: string
-    repsSuffix: string
-    rpeSuffix: string
-    deloadSuffix: string
     weightLabel: string
     repsLabel: string
     frequentWeights: string
@@ -290,7 +287,6 @@ export type Dictionary = {
     eyebrowDay: string
     exerciseLabel: string
     ofConnector: string
-    setsTotalSuffix: string
     addExerciseShort: string
     setLabel: string
     targetLabel: string
@@ -311,10 +307,23 @@ export type Dictionary = {
     pickerTitle: string
     pickerPlaceholder: string
     pickerUsualTitle: string
-    pickerSameMuscleTitle: string
     pickerAllTitle: string
     pickerEmpty: string
     pickerInWorkout: string
+    dayDoneOn: string
+    planSetsSuffix: string
+    extraSetsSuffix: string
+    substituteBtn: string
+    substituteFor: string
+    undoSubstituteBtn: string
+    doneThisWeekNotice: string
+    weekVolumeLabel: string
+    pickerReplaceTitle: string
+    pickerAlternativesTitle: string
+    pickerInList: string
+    pickerDoneThisWeek: string
+    impactSameAsPlan: string
+    similarityLabel: string
   }
   coach: {
     title: string
@@ -388,11 +397,6 @@ export type Dictionary = {
     saveBtnClean: string
     errors: {
       load: string
-      create: string
-      activate: string
-      delete: string
-      rename: string
-      save: string
       cantDeleteActive: string
     }
     prompts: {
@@ -421,6 +425,8 @@ export type Dictionary = {
     exercisePlural: string
     minutesApprox: string
     deleteDayBtn: string
+    moveDayEarlier: string
+    moveDayLater: string
     rowSelectExercise: string
     rowSelectPlaceholder: string
     rowExercise: string
@@ -470,9 +476,8 @@ export type Dictionary = {
       noPlanSubtitle: string
       goToPlan: string
       todayCompleted: string
-      todayNext: string
-      tomorrowNext: string
       otherNextPrefix: string
+      weekDone: string
       exercisesSuffix: string
       minutesSuffix: string
       reviewBtn: string
@@ -527,7 +532,7 @@ export type Dictionary = {
     sectionBasic: string
     sectionAdvanced: string
     sectionMatrices: string
-    comingSoon: string
+    settingsLoadFailed: string
     resetSection: string
     resetConfirm: string
     basic: {
@@ -574,7 +579,7 @@ export const it: Dictionary = {
     eyebrow: 'Gym Tracker',
     title: 'Accedi',
     titleFirst: 'Imposta password',
-    subtitle: 'Una volta dentro, la sessione dura un\'ora.',
+    subtitle: 'Una volta dentro, la sessione dura cinque ore.',
     subtitleFirst: 'Primo accesso: scegli una nuova password.',
     email: 'Email',
     password: 'Password',
@@ -596,18 +601,15 @@ export const it: Dictionary = {
     retry: 'Riprova',
     save: 'Salva',
     saving: 'Salvataggio…',
-    cancel: 'Annulla',
     close: 'Chiudi',
     delete: 'Elimina',
     confirm: 'Conferma',
     add: 'Aggiungi',
-    edit: 'Modifica',
     today: 'Oggi',
     language: 'Lingua',
+    saveFailed: 'Salvataggio non riuscito. Riprova.',
   },
   ai: {
-    notConfigured: 'Coach AI non configurato',
-    notEnabled: 'Coach AI disattivato',
     weeklyTitle: 'Coach · settimana',
     weeklySubtitle: 'Analisi progressi e suggerimenti',
     planTitle: 'Coach · piano',
@@ -615,6 +617,9 @@ export const it: Dictionary = {
     greeting: 'Ciao! Sono il tuo Coach AI. Ho precompilato un messaggio qui sotto con i dati aggiornati. Modificalo o invialo così com\'è.',
     placeholder: 'Chiedi al coach...',
     errorRetry: 'Errore nella risposta. Riprova.',
+    prefillWeekly: 'Ciao Coach! Oggi è {today}. Ho fatto {count} sessioni questa settimana{lastNote}. Come sto andando?',
+    prefillLastNote: ' (ultima nota: "{note}")',
+    prefillPlan: 'Ciao Coach! Oggi è {today}. Analizza il mio piano attuale: ho bisogno di consigli su equilibrio e volume.',
     quickActions: {
       weekly: [
         'Cosa mi manca questa settimana?',
@@ -656,6 +661,7 @@ export const it: Dictionary = {
     emptyState: 'Nessuna sessione registrata ancora per questo esercizio.',
   },
   history: {
+    substitutedFor: '{actual} al posto di {planned}',
     eyebrow: 'Storico',
     titleLine1: 'Le tue',
     titleLine2: 'sessioni',
@@ -790,10 +796,6 @@ export const it: Dictionary = {
     badgeDeclining: 'In calo',
   },
   setRow: {
-    recommendedFor: 'Consigliato per',
-    repsSuffix: 'reps',
-    rpeSuffix: 'RPE',
-    deloadSuffix: '(scarico)',
     weightLabel: 'Peso',
     repsLabel: 'Ripetizioni',
     frequentWeights: 'Pesi frequenti',
@@ -889,7 +891,6 @@ export const it: Dictionary = {
     eyebrowDay: 'Allenamento',
     exerciseLabel: 'Esercizio',
     ofConnector: 'di',
-    setsTotalSuffix: 'set tot.',
     addExerciseShort: 'Aggiungi',
     setLabel: 'Set',
     targetLabel: 'Target',
@@ -914,10 +915,23 @@ export const it: Dictionary = {
     pickerTitle: 'Aggiungi esercizio',
     pickerPlaceholder: 'Cerca esercizio…',
     pickerUsualTitle: 'Di solito aggiungi · {day}',
-    pickerSameMuscleTitle: 'Stesso muscolo · {muscle}',
     pickerAllTitle: 'Tutti gli esercizi',
     pickerEmpty: 'Nessun esercizio trovato',
     pickerInWorkout: 'già oggi',
+    dayDoneOn: 'fatto {date}',
+    planSetsSuffix: 'serie del piano',
+    extraSetsSuffix: 'extra',
+    substituteBtn: 'Macchinario occupato? Sostituisci',
+    substituteFor: 'Al posto di {name}',
+    undoSubstituteBtn: 'Torna a {name}',
+    doneThisWeekNotice: 'Già fatto questa settimana: {day}, {sets} serie',
+    weekVolumeLabel: 'Questa settimana',
+    pickerReplaceTitle: 'Sostituisci {name}',
+    pickerAlternativesTitle: 'Alternative a {name}',
+    pickerInList: 'in lista',
+    pickerDoneThisWeek: 'già fatto {day} · {sets} serie',
+    impactSameAsPlan: 'come il piano',
+    similarityLabel: '{pct}% simile',
   },
   coach: {
     title: 'La tua settimana',
@@ -993,11 +1007,6 @@ export const it: Dictionary = {
     saveBtnClean: 'Salvato',
     errors: {
       load: 'Impossibile caricare i piani. Riprova.',
-      create: 'Creazione piano fallita.',
-      activate: 'Attivazione fallita.',
-      delete: 'Eliminazione fallita.',
-      rename: 'Rinomina fallita.',
-      save: 'Salvataggio fallito. Controlla la rete e riprova.',
       cantDeleteActive: 'Non puoi eliminare il piano attivo. Attivane prima un altro.',
     },
     prompts: {
@@ -1026,6 +1035,8 @@ export const it: Dictionary = {
     exercisePlural: 'esercizi',
     minutesApprox: 'min',
     deleteDayBtn: 'Elimina giorno',
+    moveDayEarlier: 'Sposta il giorno prima',
+    moveDayLater: 'Sposta il giorno dopo',
     rowSelectExercise: 'Seleziona esercizio',
     rowSelectPlaceholder: '— Seleziona —',
     rowExercise: 'Esercizio',
@@ -1075,9 +1086,8 @@ export const it: Dictionary = {
       noPlanSubtitle: 'Crea il tuo piano settimanale per vedere il prossimo workout.',
       goToPlan: 'Vai al piano',
       todayCompleted: 'Oggi · Completato',
-      todayNext: 'Prossimo · Oggi',
-      tomorrowNext: 'Prossimo · Domani',
       otherNextPrefix: 'Prossimo · ',
+      weekDone: 'Settimana completata · si riparte da {day}',
       exercisesSuffix: 'esercizi',
       minutesSuffix: 'min',
       reviewBtn: 'Rivedi',
@@ -1132,7 +1142,7 @@ export const it: Dictionary = {
     sectionBasic: 'Base',
     sectionAdvanced: 'Avanzate',
     sectionMatrices: 'Avanzate — matrici',
-    comingSoon: 'Disponibile a breve.',
+    settingsLoadFailed: 'Impostazioni non caricate: ricarica la pagina prima di modificarle.',
     resetSection: 'Ripristina ai default',
     resetConfirm: 'Ripristinare questa sezione ai default?',
     basic: {
