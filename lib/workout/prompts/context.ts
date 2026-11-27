@@ -15,9 +15,8 @@ import type { Exercise, PlanRow, SetEntry, Session } from '../../models'
 import type { Lang } from '../../i18n'
 import { commentOf, intensityOf, isFailureSet, INTENSITY_KEYS } from '../../setNotes'
 import { getExerciseProgress } from '../../deload'
-import { buildWeeklyReview, type WeeklyReview } from '../../coach/weeklyReview'
+import { buildWeeklyReview, reviewRange, type ClientWeek, type WeeklyReview } from '../../coach/weeklyReview'
 import { activityMinutes, activitySessions } from '../../sessions'
-import { weekBounds } from '../../dateUtils'
 import type { ThresholdsMatrix, TrainingMode } from '../../settings/types'
 
 /** Cap on how much athlete prose reaches the prompt, newest first. */
@@ -110,6 +109,23 @@ export type AthleteContextInput = {
   targetRpeWhenReducing: number
   progressWindowWeeks: number
   progressTrendThresholdPct: number
+  /** `Plan.dayOrder` of the active plan, when the caller has it. */
+  dayOrder?: string[]
+  /**
+   * The athlete's week as their browser sees it. This runs on a UTC server:
+   * without it the first hours of a Monday still read as last week.
+   */
+  week?: ClientWeek
+}
+
+/** `toLocaleDateString` in the athlete's zone; an unknown zone falls back to the server's. */
+export function formatInZone(
+  d: Date, locale: string, options: Intl.DateTimeFormatOptions, timeZone?: string,
+): string {
+  if (timeZone) {
+    try { return d.toLocaleDateString(locale, { ...options, timeZone }) } catch { /* fall through */ }
+  }
+  return d.toLocaleDateString(locale, options)
 }
 
 /**
@@ -122,12 +138,16 @@ export function buildAthleteContext(input: AthleteContextInput): string {
   const nameOf = new Map(exercises.map(e => [e.id, e.name]))
   const out: string[] = []
 
+  const parsedNow = input.week ? new Date(input.week.now) : new Date()
+  const reference = Number.isNaN(parsedNow.getTime()) ? new Date() : parsedNow
   const review = buildWeeklyReview(sessions, sets, exercises, planRows, {
     trainingMode: input.trainingMode,
     thresholdsByMode: input.thresholdsByMode,
     maxFailurePct: input.maxFailurePct,
     targetRpeWhenReducing: input.targetRpeWhenReducing,
-  })
+    dayOrder: input.dayOrder,
+    week: input.week,
+  }, reference)
 
   if (review) {
     out.push(`${d.week}: ${review.sessionsDone}/${review.sessionsPlanned} ${d.sessions}, ` +
@@ -149,7 +169,7 @@ export function buildAthleteContext(input: AthleteContextInput): string {
   // Read straight from `sessions`, not from `review`: a week of nothing but
   // running produces no review at all, and that is exactly the week where the
   // coach most needs to know why the athlete never made it to the gym.
-  const { monday, sunday } = weekBounds(new Date())
+  const { monday, sunday } = reviewRange(input.week, reference)
   const weekActivities = activitySessions(sessions).filter(s => {
     const t = new Date(s.date).getTime()
     return Number.isFinite(t) && t >= monday.getTime() && t <= sunday.getTime()
@@ -157,7 +177,9 @@ export function buildAthleteContext(input: AthleteContextInput): string {
   if (weekActivities.length > 0) {
     out.push('', d.activities)
     for (const a of weekActivities) {
-      const day = new Date(a.date).toLocaleDateString(lang === 'en' ? 'en-US' : 'it-IT', { weekday: 'long' })
+      const day = formatInZone(
+        new Date(a.date), lang === 'en' ? 'en-US' : 'it-IT', { weekday: 'long' }, input.week?.timeZone,
+      )
       const bits: string[] = [d.activityLabels[a.activity || 'other']]
       const mins = activityMinutes(a)
       if (mins) bits.push(`${mins} min`)

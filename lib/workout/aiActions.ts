@@ -18,49 +18,23 @@ import type { TrainingMode } from '../hypertrophyThresholds'
 import type { Lang } from '../i18n'
 import { generateText, AIDisabledError, AIConfigError } from '../ai'
 import { getServerEffectiveSettings } from '../settings/server'
-import { buildWeeklyAnalysisPrompt } from './prompts/weekly'
-import { buildPlanAnalysisPrompt } from './prompts/plan'
 import { buildChatPrompt } from './prompts/chat'
 import { buildAlternativesPrompt } from './prompts/alternatives'
 import { buildExerciseDebriefPrompt } from './prompts/exerciseDebrief'
-import { buildAthleteContext } from './prompts/context'
+import { buildAthleteContext, formatInZone } from './prompts/context'
 import {
     buildSessionPlanBlock,
     type PlannedExerciseState,
     type PerformedExercise,
     type SessionPosition,
 } from './prompts/sessionPlan'
-import { buildWeeklyReview } from '../coach/weeklyReview'
+import { buildWeeklyReview, type ClientWeek } from '../coach/weeklyReview'
 import { commentOf, intensityOf, isFailureSet, INTENSITY_KEYS } from '../setNotes'
 import type { Prescription } from './prescription'
 
 export type ChatMessage = {
     role: 'user' | 'assistant'
     content: string
-}
-
-export type WeeklyAnalysisContext = {
-    planSummary: MuscleGroupSummary[]
-    weekSessions: Session[]
-    weekSets: SetEntry[]
-    exercises: Exercise[]
-    plan: PlanRow[]
-    missingExercises: Array<{
-        exerciseName: string
-        plannedSets: number
-        completedSets: number
-        remainingSets: number
-    }>
-    trainingMode?: TrainingMode
-    lang?: Lang
-}
-
-export type PlanAnalysisContext = {
-    planSummary: MuscleGroupSummary[]
-    exercises: Exercise[]
-    plan: PlanRow[]
-    trainingMode?: TrainingMode
-    lang?: Lang
 }
 
 async function callModel(prompt: string): Promise<string> {
@@ -78,64 +52,6 @@ async function callModel(prompt: string): Promise<string> {
 }
 
 /**
- * Comment on weekly progress for the current week.
- */
-export async function analyzeWeeklyProgress(context: WeeklyAnalysisContext): Promise<string> {
-    const { planSummary, weekSessions, weekSets, missingExercises, trainingMode = 'mixed', lang = 'it' } = context
-    const settings = await getServerEffectiveSettings()
-
-    const volumeSummary = planSummary
-        .map(m => `${m.muscle}: ${m.totalSets} set (${m.status})`)
-        .join('\n')
-
-    const missingSummary = missingExercises.length > 0
-        ? missingExercises.map(e => `- ${e.exerciseName}: ${e.remainingSets}`).join('\n')
-        : '-'
-
-    const prompt = buildWeeklyAnalysisPrompt({
-        lang,
-        trainingMode,
-        weekSessionsCount: weekSessions.length,
-        weekSetsCount: weekSets.length,
-        volumeSummary,
-        missingSummary,
-        athleteProfile: settings.athleteProfile,
-        athleteNotes: settings.athleteNotes,
-    })
-
-    return callModel(prompt)
-}
-
-/**
- * Analyse the current plan and suggest programming tweaks.
- */
-export async function analyzePlan(context: PlanAnalysisContext): Promise<string> {
-    const { planSummary, exercises, plan, trainingMode = 'mixed', lang = 'it' } = context
-    const settings = await getServerEffectiveSettings()
-
-    const volumeSummary = planSummary
-        .map(m => `${m.muscle}: ${m.totalSets} set (${m.status})`)
-        .join('\n')
-
-    const planStructure = plan
-        .map(p => {
-            const ex = exercises.find(e => e.id === p.exerciseId)
-            return `${p.day}: ${ex?.name || p.exerciseId} - ${p.targetSets}x${p.targetReps}${p.targetRpe ? ` @RPE${p.targetRpe}` : ''}`
-        })
-        .join('\n')
-
-    const prompt = buildPlanAnalysisPrompt({
-        lang,
-        trainingMode,
-        volumeSummary,
-        planStructure,
-        athleteProfile: settings.athleteProfile,
-        athleteNotes: settings.athleteNotes,
-    })
-    return callModel(prompt)
-}
-
-/**
  * Free chat with the AI coach about the current workout.
  */
 export async function chatWithCoach(
@@ -148,14 +64,20 @@ export async function chatWithCoach(
         weekSets?: SetEntry[]
         trainingMode?: TrainingMode
         lang?: Lang
+        /** `Plan.dayOrder` of the active plan. */
+        dayOrder?: string[]
+        /** The browser's clock and week (`clientWeek()`); the server's are UTC. */
+        week?: ClientWeek
     },
 ): Promise<string> {
     const { exercises = [], plan = [], weekSessions = [], weekSets = [], trainingMode = 'mixed', lang = 'it' } = context
     const settings = await getServerEffectiveSettings()
 
-    const todayString = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'it-IT', {
+    const clientNow = context.week ? new Date(context.week.now) : null
+    const now = clientNow && !Number.isNaN(clientNow.getTime()) ? clientNow : new Date()
+    const todayString = formatInZone(now, lang === 'en' ? 'en-US' : 'it-IT', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    })
+    }, context.week?.timeZone)
 
     // One shared context instead of a per-caller tally: the old inline version
     // normalised muscle names by lowercasing them, so it never matched the
@@ -173,6 +95,8 @@ export async function chatWithCoach(
         targetRpeWhenReducing: settings.targetRpeWhenReducing,
         progressWindowWeeks: settings.progressWindowWeeks,
         progressTrendThresholdPct: settings.progressTrendThresholdPct,
+        dayOrder: context.dayOrder,
+        week: context.week,
     })
 
     const history = messages
@@ -238,6 +162,8 @@ export type ExerciseDebriefContext = {
      * the letter, and treats an exercise done last as if it had been done first.
      */
     plannedToday?: PlannedExerciseState[]
+    /** Planned exercise id → the exercise done in its place today. */
+    substitutions?: Record<string, string>
     /** Every set done on this exercise today, in order. */
     todaySets: SetEntry[]
     /** The same exercise in its previous session. */
@@ -247,7 +173,7 @@ export type ExerciseDebriefContext = {
     targetRpe?: number
     /** True when the exercise was added during the session, off plan. */
     offPlan?: boolean
-    /** Whole-session progress, so the coach can pace what it says. */
+    /** Progress through today's plan slots (extras excluded), so the coach can pace what it says. */
     exercisesDone: number
     exercisesTotal: number
     /**
@@ -260,6 +186,10 @@ export type ExerciseDebriefContext = {
     sets: SetEntry[]
     exercises: Exercise[]
     plan: PlanRow[]
+    /** `Plan.dayOrder` of the active plan. */
+    dayOrder?: string[]
+    /** The browser's clock and week (`clientWeek()`); the server's are UTC. */
+    week?: ClientWeek
     trainingMode?: TrainingMode
     lang?: Lang
 }
@@ -346,6 +276,8 @@ export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise
         thresholdsByMode: settings.thresholdsByMode,
         maxFailurePct: settings.maxFailurePct,
         targetRpeWhenReducing: settings.targetRpeWhenReducing,
+        dayOrder: ctx.dayOrder,
+        week: ctx.week,
     })
 
     const planContext = currentId
@@ -355,6 +287,7 @@ export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise
             currentExerciseId: currentId,
             planned: ctx.plannedToday || [],
             performed,
+            substitutions: ctx.substitutions,
             currentPosition,
             previousPosition,
             exercises: ctx.exercises,
@@ -374,6 +307,8 @@ export async function coachExerciseDebrief(ctx: ExerciseDebriefContext): Promise
         targetRpeWhenReducing: settings.targetRpeWhenReducing,
         progressWindowWeeks: settings.progressWindowWeeks,
         progressTrendThresholdPct: settings.progressTrendThresholdPct,
+        dayOrder: ctx.dayOrder,
+        week: ctx.week,
     })
 
     return callModel(buildExerciseDebriefPrompt({

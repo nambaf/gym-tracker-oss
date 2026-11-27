@@ -7,9 +7,8 @@ import type { Lang } from '../i18n'
  * in `SEED_EXERCISES` — at insertion time the seed route resolves the row's
  * exerciseId by looking up the inserted exercises in the active locale.
  *
- * Day labels are localised (e.g. "Lunedì A" / "Monday A") to match how plan
- * rows store days as user-entered free text (see `app/page.tsx` weekday
- * matching). The two days map to weekday-1 / weekday-2 of the user's week.
+ * Day labels are localised ("Giorno A" / "Day A"). They are plain labels:
+ * the app proposes the days in plan order, never by calendar weekday.
  *
  * CUSTOMIZE: edit `STARTER_PLAN_ROWS` to change the prescription. Each row is
  * a [seedExerciseKey, targetSets, targetReps, targetRpe?] tuple.

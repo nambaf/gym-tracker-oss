@@ -7,7 +7,7 @@
  *
  * Tokens are signed by Cognito (RSA-256, JWKS rotated automatically by the
  * verifier). We do NOT store the refresh token: cookie lifetime equals the
- * ID token lifetime configured on the User Pool Client (1h by default), and
+ * ID token lifetime configured on the User Pool Client (`COOKIE_MAX_AGE`), and
  * the user re-logs in afterwards. This is acceptable for a single-user app.
  */
 

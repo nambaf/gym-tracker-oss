@@ -43,6 +43,19 @@ export type Session = {
   distanceKm?: number
   /** Perceived effort, same 1–5 scale the set rows use. */
   effort?: IntensityLevel
+  /**
+   * The plan day this session ran, as the athlete chose it. Absent on rows
+   * written before the day was stored: those are inferred from the exercises
+   * performed (`resolveSessionPlanDay`). Strength sessions only.
+   */
+  planDay?: string
+  /**
+   * Planned exercise id → the exercise done in its place (busy machine). The
+   * substitute fills the planned slot: its sets count toward the plan.
+   */
+  substitutions?: Record<string, string>
+  /** Exercises the athlete declared finished, whatever their set count. */
+  closedExercises?: string[]
 }
 
 /** Perceived intensity, 1 = very easy … 5 = very hard. Labels come from the dictionary. */
@@ -109,7 +122,8 @@ export type PlanRow = {
 }
 
 /**
- * A full training programme (one prototype week).
+ * A full training programme: an ordered sequence of days, done once each per
+ * week on whatever calendar days the athlete can train.
  * Multiple plans can coexist; the one with `isActive=true` is the current one.
  */
 export type Plan = {
@@ -119,4 +133,9 @@ export type Plan = {
   isActive: boolean
   description?: string
   rows: PlanRow[]
+  /**
+   * Day labels in the order the athlete trains them. Optional: plans saved
+   * before it existed fall back to `sortDays`. Read it through `planDays`.
+   */
+  dayOrder?: string[]
 }

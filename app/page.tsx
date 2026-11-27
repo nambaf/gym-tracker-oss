@@ -9,25 +9,16 @@ import { BodyMap } from '@/components/BodyMap'
 import { calculateMuscleStatus, getMissingExercises } from '@/lib/bodyMapUtils'
 import { analyzePlanCompleteness } from '@/lib/planAnalysis'
 import { WorkoutAIChat } from '@/components/WorkoutAIChat'
-import { sortDays } from '@/lib/dayUtils'
 import { ArrowRight } from 'lucide-react'
-import type { PlanRow, Exercise, Session, SetEntry } from '@/lib/models'
+import type { Session } from '@/lib/models'
+import { localDayKey, weekBounds } from '@/lib/dateUtils'
+import { planDays } from '@/lib/plan/days'
+import { usePlanDayOrder } from '@/lib/usePlanDayOrder'
+import { deriveNextWorkout, setsPerDay, type NextWorkout } from '@/lib/workout/nextWorkout'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 import type { Lang } from '@/lib/i18n'
 
 const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
-
-function getWeekBounds(date: Date): { monday: Date; sunday: Date } {
-  const d = new Date(date)
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  const monday = new Date(d.setDate(diff))
-  monday.setHours(0, 0, 0, 0)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  sunday.setHours(23, 59, 59, 999)
-  return { monday, sunday }
-}
 
 function weekdayName(d: Date, lang: Lang): string {
   const name = new Intl.DateTimeFormat(LOCALE[lang], { weekday: 'long' }).format(d)
@@ -40,47 +31,11 @@ function formatDateLong(d: Date, lang: Lang): string {
   }).format(d)
 }
 
-/**
- * Returns the lowercase weekday name in both IT and EN. Plan rows store the
- * day as user-entered free text (e.g. "Lunedì" or "Monday"); matching both
- * locales keeps the dashboard working regardless of UI language.
- */
-function todayCandidateNames(): string[] {
-  const d = new Date()
-  return [
-    new Intl.DateTimeFormat('it-IT', { weekday: 'long', timeZone: 'Europe/Rome' }).format(d).toLowerCase(),
-    new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(d).toLowerCase(),
-  ]
-}
-
-function nextWeekdayCandidates(offset: number): string[] {
-  const d = new Date()
-  d.setDate(d.getDate() + offset)
-  return [
-    new Intl.DateTimeFormat('it-IT', { weekday: 'long', timeZone: 'Europe/Rome' }).format(d).toLowerCase(),
-    new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(d).toLowerCase(),
-  ]
-}
-
-function buildHeatmap(sessions: Session[], sets: SetEntry[]): { level: number; date: Date }[] {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const out: { level: number; date: Date }[] = []
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(today.getDate() - i)
-    const dayStr = d.toISOString().slice(0, 10)
-    const daySessions = sessions.filter(s => (s.date || '').slice(0, 10) === dayStr)
-    const sessIds = new Set(daySessions.map(s => s.id))
-    const daySets = sets.filter(s => sessIds.has(s.sessionId))
-    let level = 0
-    if (daySets.length >= 18) level = 4
-    else if (daySets.length >= 12) level = 3
-    else if (daySets.length >= 6) level = 2
-    else if (daySets.length > 0) level = 1
-    out.push({ level, date: d })
-  }
-  return out
+function heatLevel(sets: number): number {
+  if (sets >= 18) return 4
+  if (sets >= 12) return 3
+  if (sets >= 6) return 2
+  return sets > 0 ? 1 : 0
 }
 
 /** Consecutive weeks (Mon–Sun) with at least one logged session. */
@@ -90,107 +45,20 @@ function calcStreakWeeks(sessions: Session[]): number {
     if (!s.date) return
     const d = new Date(s.date)
     if (isNaN(d.getTime())) return
-    const { monday } = getWeekBounds(d)
-    weeks.add(monday.toISOString().slice(0, 10))
+    weeks.add(localDayKey(weekBounds(d).monday))
   })
-  let cursor = getWeekBounds(new Date()).monday
+  let cursor = weekBounds(new Date()).monday
   let streak = 0
   // If this week is empty but last week was full, treat the streak as ongoing.
-  if (!weeks.has(cursor.toISOString().slice(0, 10))) {
+  if (!weeks.has(localDayKey(cursor))) {
     cursor.setDate(cursor.getDate() - 7)
   }
-  while (weeks.has(cursor.toISOString().slice(0, 10))) {
+  while (weeks.has(localDayKey(cursor))) {
     streak++
     cursor = new Date(cursor)
     cursor.setDate(cursor.getDate() - 7)
   }
   return streak
-}
-
-type NextWorkout = {
-  day: string
-  isToday: boolean
-  isTomorrow: boolean
-  exerciseCount: number
-  estimatedMinutes: number
-  /** All planned sets for today have been logged. */
-  completed: boolean
-}
-
-function deriveNextWorkout(
-  plan: PlanRow[],
-  _exercises: Exercise[],
-  sessions: Session[],
-  sets: SetEntry[],
-): NextWorkout | null {
-  if (!plan.length) return null
-
-  const byDay = new Map<string, PlanRow[]>()
-  plan.forEach(r => {
-    const d = String(r.day || '')
-    if (!d) return
-    const arr = byDay.get(d) || []
-    arr.push(r)
-    byDay.set(d, arr)
-  })
-  if (byDay.size === 0) return null
-
-  const allDays = sortDays(Array.from(byDay.keys()))
-  const todayNames = todayCandidateNames()
-  const todayIdx = allDays.findIndex(d => todayNames.includes(d.toLowerCase()))
-
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const todaySession = sessions.find(s => (s.date || '').slice(0, 10) === todayStr)
-  const todaySets = todaySession ? sets.filter(s => s.sessionId === todaySession.id) : []
-
-  function pickDay(dayName: string): NextWorkout {
-    const rows = byDay.get(dayName) || []
-    const uniqueEx = new Set(rows.map(r => r.exerciseId))
-    const totalSets = rows.reduce((acc, r) => {
-      const n = typeof r.targetSets === 'string' ? parseInt(r.targetSets) : (r.targetSets || 0)
-      return acc + (Number.isFinite(n) ? n : 0)
-    }, 0)
-    const estimatedMinutes = Math.max(20, Math.round(totalSets * 3.5))
-    const isToday = todayNames.includes(dayName.toLowerCase())
-    const completed = isToday && totalSets > 0 && todaySets.length >= totalSets
-    const tomorrowNames = nextWeekdayCandidates(1)
-    const isTomorrow = !isToday && tomorrowNames.includes(dayName.toLowerCase())
-    return { day: dayName, isToday, isTomorrow, exerciseCount: uniqueEx.size, estimatedMinutes, completed }
-  }
-
-  // Case A: plan uses weekday names → direct match against today/upcoming days.
-  if (todayIdx >= 0) return pickDay(allDays[todayIdx])
-  for (let offset = 1; offset <= 7; offset++) {
-    const candidates = nextWeekdayCandidates(offset)
-    const match = allDays.find(x => candidates.includes(x.toLowerCase()))
-    if (match) return pickDay(match)
-  }
-
-  // Case B: abstract plan (e.g. "Day 1..4") → find the last session and rotate.
-  const exToDay = new Map<string, string>()
-  plan.forEach(r => {
-    if (r.exerciseId && r.day && !exToDay.has(r.exerciseId)) {
-      exToDay.set(r.exerciseId, String(r.day))
-    }
-  })
-  const recentSessions = [...sessions]
-    .filter(s => s.date)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  for (const sess of recentSessions) {
-    const sessSets = sets.filter(s => s.sessionId === sess.id)
-    if (sessSets.length === 0) continue
-    const hits = new Map<string, number>()
-    sessSets.forEach(s => {
-      const d = exToDay.get(s.exerciseId)
-      if (d) hits.set(d, (hits.get(d) || 0) + 1)
-    })
-    const lastDay = Array.from(hits.entries()).sort((a, b) => b[1] - a[1])[0]?.[0]
-    if (lastDay) {
-      const idx = allDays.indexOf(lastDay)
-      if (idx >= 0) return pickDay(allDays[(idx + 1) % allDays.length])
-    }
-  }
-  return pickDay(allDays[0])
 }
 
 export default function Dashboard() {
@@ -200,12 +68,18 @@ export default function Dashboard() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  const dayOrder = usePlanDayOrder(plan.data)
+  const days = useMemo(
+    () => planDays({ rows: plan.data || [], dayOrder }),
+    [plan.data, dayOrder]
+  )
+
   const today = new Date()
 
   const muscleData = useMemo(() => {
     if (exercises.status !== 'success' || plan.status !== 'success' ||
         sets.status !== 'success' || sessions.status !== 'success') return new Map()
-    const { monday, sunday } = getWeekBounds(new Date())
+    const { monday, sunday } = weekBounds(new Date())
     return calculateMuscleStatus(
       exercises.data || [], plan.data || [], sets.data || [], sessions.data || [],
       monday, sunday
@@ -216,7 +90,7 @@ export default function Dashboard() {
     if (sessions.status !== 'success' || sets.status !== 'success') {
       return { weekSessions: [], weekSets: [], totalVolume: 0, sessionsCount: 0 }
     }
-    const { monday, sunday } = getWeekBounds(new Date())
+    const { monday, sunday } = weekBounds(new Date())
     // Activities are logged in the same table but are not training: counting a
     // Wednesday run here would show 4 sessions on a 3-day plan.
     const weekSessions = strengthSessions(sessions.data || []).filter(s => {
@@ -233,18 +107,15 @@ export default function Dashboard() {
 
   const weeklyProgress = useMemo(() => {
     if (plan.status !== 'success') return 0
-    const planDays = new Set(
-      (plan.data || []).map(r => String(r.day || '').toLowerCase()).filter(Boolean)
-    )
-    const target = planDays.size
+    const target = days.length
     if (target === 0) return 0
-    const pct = Math.min(100, Math.round((weeklyData.sessionsCount / target) * 100))
-    return pct
-  }, [plan, weeklyData.sessionsCount])
+    return Math.min(100, Math.round((weeklyData.sessionsCount / target) * 100))
+  }, [plan.status, days, weeklyData.sessionsCount])
 
   const heat = useMemo(() => {
     if (sessions.status !== 'success' || sets.status !== 'success') return []
-    return buildHeatmap(sessions.data || [], sets.data || [])
+    return setsPerDay(sessions.data || [], sets.data || [], 14)
+      .map(d => ({ date: d.date, level: heatLevel(d.sets) }))
   }, [sessions, sets])
 
   const streakWeeks = useMemo(() => {
@@ -274,13 +145,11 @@ export default function Dashboard() {
   }, [exercises, sets])
 
   const nextWorkout = useMemo<NextWorkout | null>(() => {
-    if (plan.status !== 'success' || exercises.status !== 'success' ||
-        sessions.status !== 'success' || sets.status !== 'success') return null
-    return deriveNextWorkout(
-      plan.data || [], exercises.data || [],
-      strengthSessions(sessions.data || []), sets.data || [],
-    )
-  }, [plan, exercises, sessions, sets])
+    if (plan.status !== 'success' || sessions.status !== 'success' || sets.status !== 'success') return null
+    return deriveNextWorkout({
+      days, planRows: plan.data || [], sessions: sessions.data || [], sets: sets.data || [],
+    })
+  }, [plan, days, sessions, sets])
 
   const planSummary = useMemo(() => {
     if (exercises.status !== 'success' || plan.status !== 'success') return []
@@ -298,7 +167,7 @@ export default function Dashboard() {
     if (exercises.status !== 'success' || plan.status !== 'success' ||
         sets.status !== 'success' || sessions.status !== 'success' ||
         muscleData.size === 0) return []
-    const { monday, sunday } = getWeekBounds(new Date())
+    const { monday, sunday } = weekBounds(new Date())
     return getMissingExercises(
       exercises.data || [], plan.data || [], sets.data || [], sessions.data || [],
       muscleData, monday, sunday
@@ -314,7 +183,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-7">
-      <WeeklyReviewCard />
+      <WeeklyReviewCard dayOrder={dayOrder} />
       <header className="flex items-end justify-between">
         <div>
           <div className="eyebrow">{formatDateLong(today, lang)}</div>
@@ -407,6 +276,7 @@ export default function Dashboard() {
           weekSets={weeklyData.weekSets}
           missingExercises={missingExercisesForAI}
           trainingMode={trainingMode}
+          dayOrder={dayOrder}
         />
       )}
     </div>
@@ -430,13 +300,12 @@ function NextWorkoutCard({ workout }: { workout: NextWorkout | null }) {
     )
   }
 
-  const eyebrow = workout.completed
+  const completed = workout.state === 'doneToday'
+  const eyebrow = completed
     ? t.home.next.todayCompleted
-    : workout.isToday
-      ? t.home.next.todayNext
-      : workout.isTomorrow
-        ? t.home.next.tomorrowNext
-        : `${t.home.next.otherNextPrefix}${workout.day}`
+    : workout.state === 'weekDone'
+      ? t.home.next.weekDone.replace('{day}', workout.day)
+      : `${t.home.next.otherNextPrefix}${workout.day}`
 
   return (
     <Link href="/workout" className="block group">
@@ -454,7 +323,7 @@ function NextWorkoutCard({ workout }: { workout: NextWorkout | null }) {
           </div>
           <div className="inline-flex items-center gap-1.5 bg-accent-500 text-white
                           text-[13px] font-medium rounded-full px-4 py-2">
-            {workout.completed ? t.home.next.reviewBtn : t.home.next.startBtn} <ArrowRight size={14} strokeWidth={2.2} />
+            {completed ? t.home.next.reviewBtn : t.home.next.startBtn} <ArrowRight size={14} strokeWidth={2.2} />
           </div>
         </div>
       </div>

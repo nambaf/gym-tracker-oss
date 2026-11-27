@@ -18,7 +18,11 @@ import type { Exercise } from '../../models'
 import type { Lang } from '../../i18n'
 import { MUSCLE_CONTRIBUTION_THRESHOLD, normalizeMuscle, parsePrimaryMuscles } from '../../bodyMapUtils'
 
-/** A plan row for today, with how far the athlete got on it. */
+/**
+ * A plan slot for today, with how far the athlete got on it. The id and name
+ * are always the PLANNED exercise's; when it was swapped (`substitutions`),
+ * `setsDone` and `done` describe the substitute that filled the slot.
+ */
 export type PlannedExerciseState = {
   exerciseId: string
   exerciseName: string
@@ -46,13 +50,19 @@ export type SessionPosition = { position: number; total: number }
 
 export type SessionPlanInput = {
   lang: Lang
-  /** Plan day being trained, as stored on the rows (a weekday name). */
+  /** Plan day being trained: the label the athlete gave it ("A", "Push", …). */
   planDay?: string
   currentExerciseId: string
   /** Today's plan rows, in planned order. */
   planned: PlannedExerciseState[]
   /** What was actually trained today, in performed order (off-plan included). */
   performed: PerformedExercise[]
+  /**
+   * Planned exercise id → the exercise done in its place today (busy machine).
+   * Without it a swapped slot reads as plan work still owed plus an off-plan
+   * exercise, and the coach asks for something that was in fact done.
+   */
+  substitutions?: Record<string, string>
   /** Position of the exercise that just ended, in today's real order. */
   currentPosition?: SessionPosition | null
   /** Its position in the last session it was trained in. */
@@ -76,6 +86,8 @@ const L = {
     realOrder: 'ORDINE REALE DI OGGI',
     plannedNth: 'previsto',
     offPlan: 'fuori piano',
+    swappedFor: (name: string) => `sostituito con ${name}`,
+    inPlaceOf: (name: string) => `al posto di ${name}`,
     deviations: 'SCOSTAMENTI DALL\'ORDINE',
     movedLater: (name: string, from: number, to: number) =>
       `${name} era previsto ${from}° del giorno ed e\' stato fatto ${to}° della seduta: arriva con piu\' fatica addosso.`,
@@ -107,6 +119,8 @@ const L = {
     realOrder: 'ACTUAL ORDER TODAY',
     plannedNth: 'planned',
     offPlan: 'off plan',
+    swappedFor: (name: string) => `swapped for ${name}`,
+    inPlaceOf: (name: string) => `in place of ${name}`,
     deviations: 'ORDER DEVIATIONS',
     movedLater: (name: string, from: number, to: number) =>
       `${name} was planned ${from}${ord(from)} for the day and was done ${to}${ord(to)} in the session: it lands on more fatigue.`,
@@ -163,13 +177,21 @@ export function buildSessionPlanBlock(i: SessionPlanInput): string {
   const d = L[i.lang]
   const out: string[] = []
 
+  // A slot is talked about by the exercise that actually fills it.
+  const subs = i.substitutions || {}
+  const actualId = (p: PlannedExerciseState) => subs[p.exerciseId] || p.exerciseId
+  const nameOf = (id: string) => i.exercises.find(e => e.id === id)?.name || id
+  const slotName = (p: PlannedExerciseState) => subs[p.exerciseId]
+    ? `${nameOf(subs[p.exerciseId])} (${d.inPlaceOf(p.exerciseName)})`
+    : p.exerciseName
+
   // ── The plan for the day, in its own order, annotated with reality ────────
   if (i.planned.length === 0) {
     out.push(d.noPlan)
   } else {
     out.push(`${d.planToday}${i.planDay ? ` (${i.planDay})` : ''} — ${d.plannedOrder}:`)
     for (const p of i.planned) {
-      const status = p.exerciseId === i.currentExerciseId
+      const status = actualId(p) === i.currentExerciseId
         ? d.justFinished
         : p.done
           ? `${d.done} (${p.setsDone} ${d.sets})`
@@ -177,16 +199,21 @@ export function buildSessionPlanBlock(i: SessionPlanInput): string {
             ? `${d.started}, ${p.setsDone} ${d.sets}`
             : d.todo
       const note = p.note ? ` [${d.planNote}: "${p.note}"]` : ''
-      out.push(`  ${p.position}. ${p.exerciseName} ${target(p)} — ${status}${note}`)
+      const swap = subs[p.exerciseId] ? `${d.swappedFor(nameOf(subs[p.exerciseId]))}: ` : ''
+      out.push(`  ${p.position}. ${p.exerciseName} ${target(p)} — ${swap}${status}${note}`)
     }
   }
 
   // ── What actually happened, in the order it happened ──────────────────────
-  const plannedPos = new Map(i.planned.map(p => [p.exerciseId, p.position]))
+  const plannedPos = new Map(i.planned.map(p => [actualId(p), p.position]))
+  const replacedBy = new Map(i.planned.filter(p => subs[p.exerciseId]).map(p => [subs[p.exerciseId], p.exerciseName]))
   if (i.performed.length > 0) {
     const line = i.performed.map((p, idx) => {
       const pp = plannedPos.get(p.exerciseId)
-      const tag = pp ? `${d.plannedNth} ${nth(pp, i.lang)}` : d.offPlan
+      const stoodInFor = replacedBy.get(p.exerciseId)
+      const tag = pp
+        ? `${d.plannedNth} ${nth(pp, i.lang)}${stoodInFor ? `, ${d.inPlaceOf(stoodInFor)}` : ''}`
+        : d.offPlan
       return `${idx + 1}) ${p.exerciseName} (${tag})`
     }).join(' · ')
     out.push('', `${d.realOrder}: ${line}`)
@@ -197,9 +224,8 @@ export function buildSessionPlanBlock(i: SessionPlanInput): string {
   const currentPlanned = plannedPos.get(i.currentExerciseId)
   const actual = i.currentPosition?.position
   if (currentPlanned && actual && currentPlanned !== actual) {
-    const name = i.planned.find(p => p.exerciseId === i.currentExerciseId)?.exerciseName
-      || i.performed.find(p => p.exerciseId === i.currentExerciseId)?.exerciseName
-      || ''
+    const name = i.performed.find(p => p.exerciseId === i.currentExerciseId)?.exerciseName
+      || nameOf(i.currentExerciseId)
     deviations.push(actual > currentPlanned
       ? d.movedLater(name, currentPlanned, actual)
       : d.movedEarlier(name, currentPlanned, actual))
@@ -209,7 +235,7 @@ export function buildSessionPlanBlock(i: SessionPlanInput): string {
   if (currentPlanned) {
     const skipped = i.planned
       .filter(p => p.position < currentPlanned && !p.done && p.setsDone === 0)
-      .map(p => `${p.exerciseName} (${d.plannedNth} ${nth(p.position, i.lang)})`)
+      .map(p => `${slotName(p)} (${d.plannedNth} ${nth(p.position, i.lang)})`)
     if (skipped.length > 0) deviations.push(d.skippedSoFar(skipped.join(', ')))
   }
   if (i.previousPosition && i.currentPosition &&
@@ -219,13 +245,13 @@ export function buildSessionPlanBlock(i: SessionPlanInput): string {
   if (deviations.length > 0) out.push('', `${d.deviations}:`, ...deviations.map(s => `- ${s}`))
 
   // ── What is left, and whether the week still needs it ─────────────────────
-  const remaining = i.planned.filter(p => !p.done && p.exerciseId !== i.currentExerciseId)
+  const remaining = i.planned.filter(p => !p.done && actualId(p) !== i.currentExerciseId)
   if (remaining.length > 0) {
     out.push('', `${d.remaining} (${remaining.length}):`)
     for (const p of remaining) {
       const note = p.note ? ` [${d.planNote}: "${p.note}"]` : ''
       const partial = p.setsDone > 0 ? ` — ${p.setsDone}/${p.targetSets} ${d.sets}` : ''
-      out.push(`  - ${p.exerciseName} ${target(p)}${partial}${note}`)
+      out.push(`  - ${slotName(p)} ${target(p)}${partial}${note}`)
     }
   } else if (i.planned.length > 0) {
     out.push('', d.remainingNone)
@@ -252,7 +278,7 @@ export function buildSessionPlanBlock(i: SessionPlanInput): string {
   // Where the week stands on what is still to come. This is what turns "you
   // are tired, drop the last exercise" from a guess into a decision: a muscle
   // already over threshold can be cut, one at zero cannot.
-  const remainingCoverage = coverageLines(remaining.map(p => p.exerciseId))
+  const remainingCoverage = coverageLines(remaining.map(actualId))
   if (remainingCoverage.length > 0) out.push('', `${d.weekLoad}:`, ...remainingCoverage)
 
   const currentCoverage = coverageLines([i.currentExerciseId])

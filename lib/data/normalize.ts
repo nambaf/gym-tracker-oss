@@ -103,18 +103,45 @@ function normalizeSession(row: Record<string, any>): Record<string, any> {
     const effort = num(row.effort)
     if (effort !== undefined && effort >= 1 && effort <= 5) out.effort = effort
     else delete out.effort
+    delete out.planDay
+    delete out.substitutions
+    delete out.closedExercises
   } else {
     delete out.activity
     delete out.distanceKm
     delete out.effort
+
+    if (typeof row.planDay === 'string' && row.planDay.trim()) out.planDay = row.planDay
+    else delete out.planDay
+
+    const subs: Record<string, string> = {}
+    if (row.substitutions && typeof row.substitutions === 'object' && !Array.isArray(row.substitutions)) {
+      for (const [planned, actual] of Object.entries(row.substitutions)) {
+        if (planned && typeof actual === 'string' && actual && actual !== planned) subs[planned] = actual
+      }
+    }
+    if (Object.keys(subs).length) out.substitutions = subs
+    else delete out.substitutions
+
+    const closed = Array.isArray(row.closedExercises)
+      ? Array.from(new Set(row.closedExercises.filter((x: unknown) => typeof x === 'string' && x)))
+      : []
+    if (closed.length) out.closedExercises = closed
+    else delete out.closedExercises
   }
   return out
 }
 
 function normalizePlan(row: Record<string, any>): Record<string, any> {
   if (!Array.isArray(row.rows)) return row
+  const base = { ...row }
+  if (Array.isArray(row.dayOrder)) {
+    base.dayOrder = Array.from(new Set(row.dayOrder.filter((d: unknown) => typeof d === 'string' && d)))
+  } else {
+    delete base.dayOrder
+  }
   return {
-    ...row,
+    ...base,
     rows: row.rows.map((r: Record<string, any>) => {
       const out = { ...r }
       out.targetSets = numOr(r.targetSets, 3)

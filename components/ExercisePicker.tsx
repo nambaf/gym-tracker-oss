@@ -2,7 +2,13 @@
 import { useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import type { Exercise, PlanRow, Session, SetEntry } from '@/lib/models'
-import { mainMuscleGroup, usualExtrasForDay } from '@/lib/workout/planDay'
+import { usualExtrasForDay } from '@/lib/workout/planDay'
+import {
+  rankAlternatives, sameVolumeAsPlan, volumeImpact, type MuscleCoverage,
+} from '@/lib/workout/alternatives'
+import type { ExerciseWeekUsage } from '@/lib/workout/weekUsage'
+import { formatGainImpact, formatSwapImpact } from '@/lib/workout/impactLabel'
+import MuscleChips from '@/components/MuscleChips'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 
 const MAX_SUGGESTIONS = 6
@@ -21,7 +27,17 @@ type Props = {
   selectedDay: string
   /** Exercises already on today's list: picking one jumps to it. */
   inWorkoutIds: Set<string>
-  /** The exercise on screen, used to offer same-muscle alternatives. */
+  /** Exercises with at least one set logged today. */
+  doneTodayIds: Set<string>
+  /** Exercises trained earlier this week, today excluded. */
+  weekUsage: Map<string, ExerciseWeekUsage>
+  /** Sets per muscle group so far this week, today included. */
+  coverage: MuscleCoverage[]
+  /** Sets the picked exercise would be done for: the slot's target, or the default. */
+  impactSets: number
+  /** Replace mode: the planned exercise a substitute is being chosen for. */
+  replaceFor?: Exercise
+  /** The exercise on screen, used to offer alternatives in add mode. */
   currentExerciseId?: string
   onPick: (exerciseId: string) => void
   onClose: () => void
@@ -29,15 +45,17 @@ type Props = {
 
 export default function ExercisePicker({
   exercises, sessions, sets, planRows, days, selectedDay,
-  inWorkoutIds, currentExerciseId, onPick, onClose,
+  inWorkoutIds, doneTodayIds, weekUsage, coverage, impactSets,
+  replaceFor, currentExerciseId, onPick, onClose,
 }: Props) {
   const t = useT()
   const lang = useLang()
   const [query, setQuery] = useState('')
 
   const byId = useMemo(() => new Map(exercises.map(e => [e.id, e])), [exercises])
+  const weekdayFmt = useMemo(() => new Intl.DateTimeFormat(lang, { weekday: 'short' }), [lang])
 
-  /** Most recent set per exercise: the "last time" hint and the recency order. */
+  /** Most recent set per exercise: the "last time" hint. */
   const lastSet = useMemo(() => {
     const out = new Map<string, SetEntry>()
     for (const s of sets) {
@@ -52,28 +70,25 @@ export default function ExercisePicker({
     [exercises, lang]
   )
 
+  // What to rank against: the exercise being replaced, or the one on screen.
+  const reference = replaceFor ?? (currentExerciseId ? byId.get(currentExerciseId) : undefined)
+
+  const alternatives = useMemo(
+    () => rankAlternatives(reference, exercises, inWorkoutIds).slice(0, MAX_SUGGESTIONS),
+    [reference, exercises, inWorkoutIds]
+  )
+  const similarity = useMemo(
+    () => new Map(alternatives.map(a => [a.exercise.id, a.similarity])),
+    [alternatives]
+  )
+
   const usual = useMemo(() => {
     if (!selectedDay) return []
+    const shown = new Set(alternatives.map(a => a.exercise.id))
     return usualExtrasForDay({ day: selectedDay, days, planRows, sessions, sets })
-      .filter(id => byId.has(id) && !inWorkoutIds.has(id))
+      .filter(id => byId.has(id) && !inWorkoutIds.has(id) && !shown.has(id))
       .slice(0, MAX_SUGGESTIONS)
-  }, [selectedDay, days, planRows, sessions, sets, byId, inWorkoutIds])
-
-  const current = currentExerciseId ? byId.get(currentExerciseId) : undefined
-  const currentGroup = mainMuscleGroup(current?.primaryMuscles)
-
-  // Alternatives for a busy station: same main muscle, most recently used first.
-  const sameMuscle = useMemo(() => {
-    if (!current || !currentGroup) return []
-    const shown = new Set(usual)
-    return exercises
-      .filter(e => e.id !== current.id && !shown.has(e.id) && !inWorkoutIds.has(e.id)
-        && mainMuscleGroup(e.primaryMuscles) === currentGroup)
-      .sort((a, b) =>
-        String(lastSet.get(b.id)?.ts || '').localeCompare(String(lastSet.get(a.id)?.ts || ''))
-        || a.name.localeCompare(b.name, lang))
-      .slice(0, MAX_SUGGESTIONS)
-  }, [current, currentGroup, exercises, usual, inWorkoutIds, lastSet, lang])
+  }, [selectedDay, days, planRows, sessions, sets, byId, inWorkoutIds, alternatives])
 
   const matches = useMemo(() => {
     const q = fold(query.trim())
@@ -81,22 +96,49 @@ export default function ExercisePicker({
     return alphabetical.filter(e => fold(e.name).includes(q) || fold(e.id).includes(q))
   }, [alphabetical, query])
 
+  /** What picking `ex` does to the week's volume, as one line of text. */
+  function impactText(ex: Exercise): string {
+    const impact = volumeImpact({ coverage, candidate: ex, planned: replaceFor, sets: impactSets })
+    if (!replaceFor) return formatGainImpact(impact, t.muscles)
+    if (impact.length === 0) return ''
+    return sameVolumeAsPlan(impact) ? t.workout.impactSameAsPlan : formatSwapImpact(impact, t.muscles)
+  }
+
   function row(ex: Exercise) {
-    const group = mainMuscleGroup(ex.primaryMuscles)
     const last = lastSet.get(ex.id)
+    const usage = weekUsage.get(ex.id)
+    const similar = similarity.get(ex.id)
+    const impact = ex.id === replaceFor?.id ? '' : impactText(ex)
+    const usageDay = usage ? new Date(usage.lastTs) : null
     return (
       <button
         key={ex.id}
         onClick={() => onPick(ex.id)}
-        className="w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl text-left
+        className="w-full flex items-start justify-between gap-3 px-3.5 py-3 rounded-xl text-left
                    bg-paper-card border border-ink/[0.06] active:bg-paper-sunken"
       >
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1 space-y-1">
           <span className="block text-[14px] font-medium text-ink truncate">{ex.name}</span>
-          {group && <span className="block text-[11px] text-muted">{t.muscles[group] || group}</span>}
+          <MuscleChips primaryMuscles={ex.primaryMuscles} size="sm" />
+          {(similar !== undefined || impact) && (
+            <span className="block text-[11px] text-muted num">
+              {similar !== undefined && t.workout.similarityLabel.replace('{pct}', String(Math.round(similar * 100)))}
+              {similar !== undefined && impact && <span className="opacity-40 mx-1">·</span>}
+              {impact}
+            </span>
+          )}
+          {usage && (
+            <span className="chip !text-[10px] !bg-warning/10 !text-warning">
+              {t.workout.pickerDoneThisWeek
+                .replace('{day}', usageDay && !Number.isNaN(usageDay.getTime()) ? weekdayFmt.format(usageDay) : '')
+                .replace('{sets}', String(usage.sets))}
+            </span>
+          )}
         </span>
-        {inWorkoutIds.has(ex.id) ? (
+        {doneTodayIds.has(ex.id) ? (
           <span className="chip !text-[10px] shrink-0">{t.workout.pickerInWorkout}</span>
+        ) : inWorkoutIds.has(ex.id) ? (
+          <span className="chip !text-[10px] shrink-0">{t.workout.pickerInList}</span>
         ) : last ? (
           <span className="num text-[12px] text-muted shrink-0">{last.weight} kg × {last.reps}</span>
         ) : null}
@@ -118,9 +160,13 @@ export default function ExercisePicker({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="display text-2xl">{t.workout.pickerTitle}</h3>
-            <button onClick={onClose} className="btn-icon"><X size={16} /></button>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="display text-2xl min-w-0 truncate">
+              {replaceFor
+                ? t.workout.pickerReplaceTitle.replace('{name}', replaceFor.name)
+                : t.workout.pickerTitle}
+            </h3>
+            <button onClick={onClose} className="btn-icon shrink-0" aria-label={t.common.close}><X size={16} /></button>
           </div>
           {/* No autoFocus: on a phone the keyboard would cover the suggestions,
               which are what the athlete usually wants. */}
@@ -141,13 +187,17 @@ export default function ExercisePicker({
               : <div className="text-sm text-muted text-center py-6">{t.workout.pickerEmpty}</div>
           ) : (
             <>
+              {replaceFor && section(
+                t.workout.pickerAlternativesTitle.replace('{name}', replaceFor.name),
+                alternatives.map(a => a.exercise),
+              )}
               {section(
                 t.workout.pickerUsualTitle.replace('{day}', selectedDay),
                 usual.map(id => byId.get(id)!),
               )}
-              {currentGroup && section(
-                t.workout.pickerSameMuscleTitle.replace('{muscle}', t.muscles[currentGroup] || currentGroup),
-                sameMuscle,
+              {!replaceFor && reference && section(
+                t.workout.pickerAlternativesTitle.replace('{name}', reference.name),
+                alternatives.map(a => a.exercise),
               )}
               {section(t.workout.pickerAllTitle, alphabetical)}
             </>

@@ -51,6 +51,8 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       SSESpecification:
         SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - { AttributeName: id, AttributeType: S }
       KeySchema:
@@ -68,6 +70,8 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       SSESpecification:
         SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - { AttributeName: id, AttributeType: S }
         - { AttributeName: date, AttributeType: S }
@@ -121,6 +125,8 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       SSESpecification:
         SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - { AttributeName: id, AttributeType: S }
       KeySchema:
@@ -138,6 +144,8 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       SSESpecification:
         SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - { AttributeName: id, AttributeType: S }
       KeySchema:
@@ -176,6 +184,16 @@ Resources:
               - !GetAtt SetsTable.Arn
               - !GetAtt PlansTable.Arn
               - !GetAtt SettingsTable.Arn
+          # DynamoDB authorises a Query on a GSI against the index ARN, not the
+          # table ARN. Only the tables that define indexes, and only Query: the
+          # app never scans or writes through an index
+          # (`deleteSetsForSession` queries `sessionId-index`).
+          - Effect: Allow
+            Action:
+              - dynamodb:Query
+            Resource:
+              - !Sub '${SessionsTable.Arn}/index/*'
+              - !Sub '${SetsTable.Arn}/index/*'
           # InvokeModel for AI_PROVIDER=bedrock. Harmless when AI_PROVIDER != bedrock
           # (the code path is never exercised). Adopters who use a non-Bedrock
           # provider can drop this statement without functional impact.

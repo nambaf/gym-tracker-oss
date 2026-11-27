@@ -11,6 +11,7 @@ import type { Exercise, PlanRow, Session, SetEntry } from '@/lib/models'
 import type { TrainingMode } from '@/lib/hypertrophyThresholds'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 import { useAIEnabled } from '@/lib/appConfig'
+import { clientWeek } from '@/lib/coach/weeklyReview'
 
 type ChatMode = 'weekly' | 'plan'
 
@@ -29,6 +30,8 @@ interface WorkoutAIChatProps {
     }>
     trainingMode?: TrainingMode
     sessions?: Session[]
+    /** `Plan.dayOrder` of the active plan, so the coach lists days in plan order. */
+    dayOrder?: string[]
 }
 
 export function WorkoutAIChat({
@@ -41,6 +44,7 @@ export function WorkoutAIChat({
     missingExercises = [],
     trainingMode = 'mixed',
     sessions = [],
+    dayOrder,
 }: WorkoutAIChatProps) {
     const t = useT()
     const lang = useLang()
@@ -67,22 +71,14 @@ export function WorkoutAIChat({
                 const today = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'it-IT', { weekday: 'long' })
 
                 if (mode === 'weekly') {
-                    const sessionCount = weekSessions.length
                     const lastSession = weekSessions[weekSessions.length - 1]
-
-                    if (lang === 'en') {
-                        const lastNote = lastSession?.note ? ` (last note: "${lastSession.note}")` : ''
-                        setInput(`Hi Coach! Today is ${today}. I did ${sessionCount} sessions this week${lastNote}. How am I doing?`)
-                    } else {
-                        const lastNote = lastSession?.note ? ` (Nota ultima: "${lastSession.note}")` : ''
-                        setInput(`Ciao Coach! Oggi è ${today}. Ho fatto ${sessionCount} sessioni questa settimana${lastNote}. Come sto andando?`)
-                    }
+                    const lastNote = lastSession?.note ? t.ai.prefillLastNote.replace('{note}', lastSession.note) : ''
+                    setInput(t.ai.prefillWeekly
+                        .replace('{today}', today)
+                        .replace('{count}', String(weekSessions.length))
+                        .replace('{lastNote}', lastNote))
                 } else {
-                    if (lang === 'en') {
-                        setInput(`Hi Coach! Today is ${today}. Review my current plan: I need advice on balance and volume.`)
-                    } else {
-                        setInput(`Ciao Coach! Oggi è ${today}. Analizza il mio piano attuale: ho bisogno di consigli su equilibrio e volume.`)
-                    }
+                    setInput(t.ai.prefillPlan.replace('{today}', today))
                 }
             }
         }
@@ -115,7 +111,8 @@ export function WorkoutAIChat({
             } else {
                 response = await chatWithCoach(
                     [...messages, userMessage],
-                    { planSummary, exercises, plan, weekSessions, weekSets, trainingMode, lang }
+                    // The server runs in UTC: it is told which week and day it is here.
+                    { planSummary, exercises, plan, weekSessions, weekSets, trainingMode, lang, dayOrder, week: clientWeek() }
                 )
             }
 

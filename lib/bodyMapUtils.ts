@@ -6,6 +6,7 @@ import { buildExerciseBests, relativeIntensity } from './records'
 // these functions report — `DailyIntensityData.sessions` above all — honest on
 // a day where the athlete both ran and lifted.
 import { strengthSessions } from './sessions'
+import { weekBounds } from './dateUtils'
 
 /**
  * Binary threshold for set counting: a muscle with ≥ 40% contribution counts
@@ -360,16 +361,7 @@ export function getWeeklyVolumeData(
     const weekEnd = new Date(now)
     weekEnd.setDate(now.getDate() - (i * 7))
 
-    // Snap to monday → sunday of this week
-    const weekStart = new Date(weekEnd)
-    const day = weekStart.getDay()
-    const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1)
-    weekStart.setDate(diff)
-    weekStart.setHours(0, 0, 0, 0)
-
-    const sunday = new Date(weekStart)
-    sunday.setDate(weekStart.getDate() + 6)
-    sunday.setHours(23, 59, 59, 999)
+    const { monday: weekStart, sunday } = weekBounds(weekEnd)
 
     const weekSessions = strengthSessions(sessions).filter(s => {
       const d = new Date(s.date)

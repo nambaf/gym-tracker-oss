@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import ProgressModal from './ProgressModal'
 import { useDataStore } from '@/store/data'
 import { Battery } from 'lucide-react'
+import { toast } from 'sonner'
 import { useT } from '@/lib/i18n/I18nProvider'
 
 export default function DeloadBanner() {
@@ -36,7 +37,7 @@ export default function DeloadBanner() {
               {t.deloadBanner.analyseBtn}
             </button>
             <button
-              onClick={() => setDeloadActive(false)}
+              onClick={async () => { if (!(await setDeloadActive(false))) toast.error(t.common.saveFailed) }}
               className="btn-pill !bg-transparent !border-transparent !text-muted hover:!text-ink"
             >
               {t.deloadBanner.deactivateBtn}

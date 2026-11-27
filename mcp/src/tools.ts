@@ -14,6 +14,8 @@
 import { MUSCLE_CONTRIBUTION_THRESHOLD, MuscleGroup, normalizeMuscle, parsePrimaryMuscles } from '../../lib/bodyMapUtils'
 import { buildWeeklyReview } from '../../lib/coach/weeklyReview'
 import { localDayKey } from '../../lib/dateUtils'
+import { planDays } from '../../lib/plan/days'
+import { exercisesByDay, resolveSessionPlanDay } from '../../lib/workout/planDay'
 import { epley1RM } from '../../lib/progress'
 import { buildExerciseBests, MAX_REPS_FOR_E1RM } from '../../lib/records'
 import { activityMinutes, isActivitySession } from '../../lib/sessions'
@@ -253,6 +255,7 @@ export function getWeeklyReview(data: Dataset, opts: { weeksAgo?: number }) {
       thresholdsByMode: data.settings.thresholdsByMode,
       maxFailurePct: data.settings.maxFailurePct,
       targetRpeWhenReducing: data.settings.targetRpeWhenReducing,
+      dayOrder: activePlan?.dayOrder,
     },
     reference
   )
@@ -381,6 +384,9 @@ export function getRecentSessions(data: Dataset, opts: { limit?: number; include
   const includeActivities = opts.includeActivities ?? true
   const bySession = setsBySession(data.sets)
   const nameOf = new Map(data.exercises.map(e => [e.id, e.name]))
+  const activePlan = data.plans.find(p => p.isActive)
+  const days = planDays(activePlan)
+  const planByDay = exercisesByDay(activePlan?.rows || [])
 
   const rows = data.sessions
     .filter(s => includeActivities || !isActivitySession(s))
@@ -409,6 +415,18 @@ export function getRecentSessions(data: Dataset, opts: { limit?: number; include
       return {
         date,
         kind: 'strength' as const,
+        // Same resolver as the app: the day the athlete chose, else the plan
+        // day sharing the most exercises with what was done. Null when the
+        // session matches nothing in the active plan.
+        planDay: resolveSessionPlanDay(session, new Set(byExercise.keys()), days, planByDay),
+        // A substitute stood in for a planned exercise (busy machine): it
+        // counts as that planned exercise, not as off-plan work.
+        substitutions: Object.entries(session.substitutions || {})
+          .filter(([, actual]) => byExercise.has(actual))
+          .map(([planned, actual]) => ({
+            planned: nameOf.get(planned) || planned,
+            done: nameOf.get(actual) || actual,
+          })),
         durationMin: activityMinutes(session),
         totalSets: sets.length,
         tonnageKg: tonnage(sets),
@@ -436,9 +454,10 @@ export function getActivePlan(data: Dataset) {
 
   const byDay = new Map<string, typeof plan.rows>()
   for (const row of plan.rows) {
-    const list = byDay.get(row.day)
+    const day = String(row.day)
+    const list = byDay.get(day)
     if (list) list.push(row)
-    else byDay.set(row.day, [row])
+    else byDay.set(day, [row])
   }
 
   return {
@@ -447,9 +466,11 @@ export function getActivePlan(data: Dataset) {
     description: plan.description || null,
     createdAt: dayOf(plan.createdAt),
     trainingMode: data.settings.trainingMode,
-    days: Array.from(byDay.entries()).map(([day, rows]) => ({
+    // Plan order, not insertion order: the days are a sequence the athlete
+    // works through once a week.
+    days: planDays(plan).map(day => ({
       day,
-      exercises: rows
+      exercises: (byDay.get(day) || [])
         .slice()
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map(r => ({

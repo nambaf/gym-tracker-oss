@@ -20,7 +20,7 @@ const LOCALE: Record<Lang, string> = { it: 'it-IT', en: 'en-US' }
  * storage of its own. Every proposal is an edit the athlete approves; nothing
  * is applied on their behalf.
  */
-export default function WeeklyReviewCard() {
+export default function WeeklyReviewCard({ dayOrder }: { dayOrder?: string[] }) {
   const t = useT()
   const lang = useLang()
   const { sessions, sets, exercises, plan, storedSettings, trainingMode, loadPlan } = useDataStore()
@@ -37,6 +37,7 @@ export default function WeeklyReviewCard() {
       thresholdsByMode: eff.thresholdsByMode,
       maxFailurePct: eff.maxFailurePct,
       targetRpeWhenReducing: eff.targetRpeWhenReducing,
+      dayOrder,
     }
     const args = [sessions.data || [], sets.data || [], exercises.data || [], plan.data || [], opts] as const
     // Prefer the week in progress; on a Monday with nothing logged yet, the
@@ -47,7 +48,7 @@ export default function WeeklyReviewCard() {
     const lastWeek = new Date(now)
     lastWeek.setDate(now.getDate() - 7)
     return buildWeeklyReview(...args, lastWeek)
-  }, [sessions, sets, exercises, plan, storedSettings])
+  }, [sessions, sets, exercises, plan, storedSettings, dayOrder])
 
   if (!review) return null
 
@@ -202,6 +203,7 @@ export default function WeeklyReviewCard() {
             weekSessions={sessions.data || []}
             weekSets={sets.data || []}
             trainingMode={trainingMode}
+            dayOrder={dayOrder}
           />
         </div>
       )}

@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { buildLegacyNote, formatSetNoteOf, isFailureSet } from '@/lib/setNotes'
 import { SetRow } from '@/components/SetRow'
 import { RestTimer } from '@/components/RestTimer'
@@ -10,13 +11,16 @@ import SwipeableSetRow from '@/components/SwipeableSetRow'
 import { useDataStore } from '@/store/data'
 import { useWakeLock } from '@/lib/useWakeLock'
 import { WorkoutTimer } from '@/components/WorkoutTimer'
-import { sortDays } from '@/lib/dayUtils'
 import DeloadBanner from '@/components/DeloadBanner'
 import ExerciseDebrief from '@/components/ExerciseDebrief'
-import { Plan, PlanRow, IntensityLevel, NextIntent, SetFlag } from '@/lib/models'
+import MuscleChips from '@/components/MuscleChips'
+import { Plan, PlanRow, Session, SetEntry, IntensityLevel, NextIntent, SetFlag } from '@/lib/models'
 import { getRestPresetForExercise } from '@/lib/restTimerPresets'
 import { localDayKey } from '@/lib/dateUtils'
 import { strengthSessions } from '@/lib/sessions'
+import { apiFetch, apiJson } from '@/lib/api'
+import { planDays } from '@/lib/plan/days'
+import { getThresholdsForMode } from '@/lib/hypertrophyThresholds'
 import {
   DEFAULT_TARGET_SETS, DEFAULT_TARGET_REPS, DEFAULT_AUTO_START_REST_TIMER,
   DEFAULT_PROGRESSION_STEP_KG, DEFAULT_DELOAD_LOAD_FACTOR,
@@ -25,8 +29,14 @@ import { parseRepTarget, repsForSet } from '@/lib/workout/repTarget'
 import { suggestNextLoad } from '@/lib/workout/prescription'
 import { detectPR, previousSessionSetsFor, type PrResult } from '@/lib/records'
 import ExercisePicker from '@/components/ExercisePicker'
-import { pickPlanDay } from '@/lib/workout/planDay'
-import { Check, Plus, CheckCircle2, Trophy } from 'lucide-react'
+import { pickPlanDay, weekDayStatus } from '@/lib/workout/planDay'
+import { clientWeek } from '@/lib/coach/weeklyReview'
+import { buildWorkoutList, type WorkoutItem } from '@/lib/workout/workoutList'
+import { isItemFinished, sessionProgress } from '@/lib/workout/progress'
+import { exerciseWeekUsage } from '@/lib/workout/weekUsage'
+import { countedMuscles, weekCoverage, type MuscleCoverage } from '@/lib/workout/alternatives'
+import { effectiveSubstitutions } from '@/lib/workout/impactLabel'
+import { ArrowLeftRight, Check, Plus, CheckCircle2, Trophy } from 'lucide-react'
 import { useT, useLang } from '@/lib/i18n/I18nProvider'
 
 /** True when `isoDate` falls on the same local calendar day as `dayKey`. */
@@ -36,46 +46,40 @@ function isSameLocalDay(isoDate: string | undefined, dayKey: string): boolean {
   return !Number.isNaN(d.getTime()) && localDayKey(d) === dayKey
 }
 
-async function findOrCreateTodaySession(startTime?: string): Promise<any> {
+/**
+ * Today's strength session, created if there is none. `seed` is what the
+ * athlete already decided before the row existed — the day and any swap — so a
+ * new row is born with it instead of needing a second write.
+ */
+async function findOrCreateTodaySession(
+  seed: Pick<Session, 'startTime' | 'planDay' | 'substitutions'>,
+): Promise<{ row: Session; created: boolean }> {
   const today = localDayKey()
-  const sessionsRes = await fetch('/api/data/sessions')
-  if (!sessionsRes.ok) throw new Error(`sessions ${sessionsRes.status}`)
-  const sessions = await sessionsRes.json()
+  const sessions = await apiJson<Session[]>('/api/data/sessions')
   // Skip activity rows: a run logged this morning shares the date but has no
   // sets, and attaching today's lifting to it would hide the workout from
   // every count that filters activities out.
   const todaySession = Array.isArray(sessions)
-    ? strengthSessions(sessions).find((s: any) => isSameLocalDay(s.date, today))
-    : null
-  if (todaySession) return todaySession
+    ? strengthSessions(sessions).find(s => isSameLocalDay(s.date, today))
+    : undefined
+  if (todaySession) return { row: todaySession, created: false }
+  const now = new Date().toISOString()
   const payload = {
-    date: new Date().toISOString(),
+    date: now,
     note: '',
     kind: 'strength' as const,
-    startTime: startTime || new Date().toISOString(),
+    startTime: seed.startTime || now,
+    ...(seed.planDay ? { planDay: seed.planDay } : {}),
+    ...(seed.substitutions && Object.keys(seed.substitutions).length > 0
+      ? { substitutions: seed.substitutions }
+      : {}),
   }
-  const res = await fetch('/api/data/sessions', {
+  const { id } = await apiJson<{ id: string }>('/api/data/sessions', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error(`create session ${res.status}`)
-  const { id } = await res.json()
-  return { id, ...payload }
-}
-
-/**
- * Today's weekday name in both IT and EN. Plan rows store the day as
- * free text, so matching both locales keeps the workout page working
- * regardless of UI language. Both use the browser's own timezone: pinning
- * the Italian name to Europe/Rome made the two candidates disagree about
- * which day it was for anyone training outside that zone.
- */
-function todayCandidateNames(): string[] {
-  const d = new Date()
-  return [
-    new Intl.DateTimeFormat('it-IT', { weekday: 'long' }).format(d).toLowerCase(),
-    new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(d).toLowerCase(),
-  ]
+  if (!id) throw new Error('create session: missing id')
+  return { row: { id, ...payload }, created: true }
 }
 
 /** Human-readable size of a record improvement: kg for load PRs, reps otherwise. */
@@ -89,34 +93,35 @@ function byTimestamp(a: { ts?: string }, b: { ts?: string }): number {
   return String(a.ts || '').localeCompare(String(b.ts || ''))
 }
 
-/** Done = the athlete closed it, or it reached its planned set count. */
-function isExerciseFinished(ex: WorkoutExercise, closed: Set<string>): boolean {
-  return closed.has(ex.id) || ex.completedSets.length >= ex.targetSets
+/** `Intl` formatting that never throws on a missing or malformed timestamp. */
+function formatDate(fmt: Intl.DateTimeFormat, value: string | Date): string {
+  const d = typeof value === 'string' ? new Date(value) : value
+  return Number.isNaN(d.getTime()) ? '' : fmt.format(d)
 }
 
-type WorkoutExercise = {
-  id: string
-  name: string
-  targetSets: number
-  targetReps: string
-  fromPlan: boolean
-  completedSets: any[]
-  isActive: boolean
-  note?: string
-  targetRpe?: number
+/** A 'YYYY-MM-DD' local day key as a local date (`new Date(key)` would read it as UTC). */
+function dayKeyToDate(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(y, (m || 1) - 1, d || 1)
 }
+
+type PickerState = { mode: 'add' } | { mode: 'replace'; plannedId: string }
+
+const NO_SESSIONS: Session[] = []
+const NO_SETS: SetEntry[] = []
 
 export default function WorkoutPage() {
   const t = useT()
   const lang = useLang()
-  const [session, setSession] = useState<any | null>(null)
-  const [planRows, setPlanRows] = useState<any[]>([])
+  const [session, setSession] = useState<Session | null>(null)
+  const [planRows, setPlanRows] = useState<PlanRow[]>([])
   const [days, setDays] = useState<string[]>([])
   const [selectedDay, setSelectedDay] = useState<string>('')
-  const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([])
-  const [activeExIndex, setActiveExIndex] = useState<number>(0)
+  // The card on screen is tracked by exercise, not by position: the list is
+  // derived, and an extra moves once its first set gives it a timestamp.
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [showSummary, setShowSummary] = useState(false)
-  const [showExercisePicker, setShowExercisePicker] = useState(false)
+  const [picker, setPicker] = useState<PickerState | null>(null)
   const [plansLoaded, setPlansLoaded] = useState(false)
   const dayPickedRef = useRef(false)
   const [isFinishing, setIsFinishing] = useState(false)
@@ -129,13 +134,23 @@ export default function WorkoutPage() {
   const [debriefTrigger, setDebriefTrigger] = useState<string | null>(null)
   // Exercises the athlete closed by hand. Reaching the target set count is not
   // the same as being done: they may stop at 2 of 3, or add a fourth set.
+  // Mirrors `session.closedExercises`, like `substitutions` below.
   const [closedExercises, setClosedExercises] = useState<Set<string>>(new Set())
+  /** Planned exercise id → the exercise done in its place today. */
+  const [substitutions, setSubstitutions] = useState<Record<string, string>>({})
+  /** Extras picked but not yet logged; once they have a set the sets carry them. */
+  const [pendingExtras, setPendingExtras] = useState<string[]>([])
   const prTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const carouselRef = useRef<HTMLDivElement>(null)
   // Holds the in-flight "find or create today's session" promise so two quick
   // taps reuse one request instead of racing into two sessions for one day.
-  const sessionPromiseRef = useRef<Promise<any> | null>(null)
+  const sessionPromiseRef = useRef<Promise<Session> | null>(null)
+  // Session whose stored swaps and closed exercises are already in state.
+  const hydratedSessionRef = useRef<string | null>(null)
+  // The PATCH route reads the row, merges and writes it back, so two requests
+  // in flight together can each overwrite the other's field. One at a time.
+  const patchQueueRef = useRef<Promise<unknown>>(Promise.resolve())
 
   const {
     sessions: sessionsState,
@@ -153,30 +168,70 @@ export default function WorkoutPage() {
   const fallbackTargetReps = storedSettings.defaultTargetReps ?? DEFAULT_TARGET_REPS
   const autoStartRest = storedSettings.autoStartRestTimer ?? DEFAULT_AUTO_START_REST_TIMER
 
+  function patchSessionRow(id: string, updates: Partial<Session>): Promise<void> {
+    const run = patchQueueRef.current
+      .catch(() => undefined)
+      .then(() => apiFetch(`/api/data/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(updates) }))
+      .then(() => undefined)
+    patchQueueRef.current = run
+    return run
+  }
+
+  /**
+   * Write session fields the athlete just changed (day, swaps, closed
+   * exercises). With no session yet there is nothing to write: the values stay
+   * in state and go out with the row when the first set creates it.
+   */
+  async function saveSessionFields(updates: Partial<Session>) {
+    const target = session ?? (await sessionPromiseRef.current?.catch(() => null)) ?? null
+    if (!target?.id) return
+    setSession(prev => (prev && prev.id === target.id ? { ...prev, ...updates } : prev))
+    updateSessionOptimistic(target.id, updates)
+    try {
+      await patchSessionRow(target.id, updates)
+    } catch (e) {
+      console.error('Failed to update session:', e)
+      toast.error(t.common.saveFailed)
+    }
+  }
+
   /**
    * Resolve today's session, creating it (and stamping `startTime`) if needed.
    * Concurrent callers share one in-flight request.
    */
-  async function ensureSession(): Promise<any> {
+  async function ensureSession(): Promise<Session> {
     const startTime = new Date().toISOString()
     if (session?.id) {
       if (session.startTime) return session
-      const res = await fetch(`/api/data/sessions/${session.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ startTime }),
-      })
-      if (!res.ok) throw new Error(`patch session ${res.status}`)
+      await patchSessionRow(session.id, { startTime })
       const updated = { ...session, startTime }
       setSession(updated)
       updateSessionOptimistic(session.id, { startTime })
       return updated
     }
     if (!sessionPromiseRef.current) {
-      sessionPromiseRef.current = findOrCreateTodaySession(startTime)
-        .then(created => {
-          setSession(created)
-          addSessionOptimistic(created)
-          return created
+      const localSubs = substitutions
+      sessionPromiseRef.current = findOrCreateTodaySession({
+        startTime, planDay: selectedDay || undefined, substitutions: localSubs,
+      })
+        .then(({ row, created }) => {
+          let next = row
+          if (!created) {
+            // The row was already there (the sessions slice had not loaded
+            // yet): what it stores comes in, and swaps picked meanwhile win.
+            const merged = { ...(row.substitutions || {}), ...localSubs }
+            next = { ...row, substitutions: merged }
+            setSubstitutions(prev => ({ ...(row.substitutions || {}), ...prev }))
+            setClosedExercises(prev => new Set([...(row.closedExercises || []), ...prev]))
+            if (Object.keys(localSubs).length > 0) {
+              patchSessionRow(row.id, { substitutions: merged })
+                .catch(() => toast.error(t.common.saveFailed))
+            }
+          }
+          hydratedSessionRef.current = next.id
+          setSession(next)
+          if (created) addSessionOptimistic(next)
+          return next
         })
         .finally(() => { sessionPromiseRef.current = null })
     }
@@ -188,6 +243,7 @@ export default function WorkoutPage() {
       await ensureSession()
     } catch (e) {
       console.error('Failed to start workout:', e)
+      toast.error(t.common.saveFailed)
     }
   }
 
@@ -199,14 +255,14 @@ export default function WorkoutPage() {
       const startMs = new Date(session.startTime).getTime()
       const endMs = new Date(endTime).getTime()
       const duration = Math.floor((endMs - startMs) / 1000)
-      await fetch(`/api/data/sessions/${session.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ endTime, duration }),
-      })
-      const updatedSession = { ...session, endTime, duration }
-      setSession(updatedSession)
+      await patchSessionRow(session.id, { endTime, duration })
+      setSession({ ...session, endTime, duration })
       updateSessionOptimistic(session.id, { endTime, duration })
       setShowSummary(true)
+    } catch (e) {
+      // No summary for a workout that was not closed: it would read as saved.
+      console.error('Failed to finish workout:', e)
+      toast.error(t.common.saveFailed)
     } finally {
       setIsFinishing(false)
     }
@@ -216,15 +272,16 @@ export default function WorkoutPage() {
     () => (exercisesState.status === 'success' ? exercisesState.data || [] : []),
     [exercisesState]
   )
+  const allSessions = sessionsState.status === 'success' ? sessionsState.data || NO_SESSIONS : NO_SESSIONS
+  const allSets = setsState.status === 'success' ? setsState.data || NO_SETS : NO_SETS
 
   useEffect(() => {
     loadSessions(); loadSets(); loadExercises(); loadSettings()
     ;(async () => {
-      const plans: Plan[] = await fetch('/api/data/plans').then(r => r.ok ? r.json() : [])
+      const plans = await apiJson<Plan[]>('/api/data/plans').catch(() => [] as Plan[])
       const active = Array.isArray(plans) ? (plans.find(p => p.isActive) || plans[0]) : null
-      const rows: PlanRow[] = active?.rows || []
-      setPlanRows(rows)
-      setDays(sortDays(Array.from(new Set(rows.map(r => String(r.day)))).filter(Boolean)))
+      setPlanRows(active?.rows || [])
+      setDays(planDays(active))
       setPlansLoaded(true)
     })()
   }, [loadSessions, loadSets, loadExercises, loadSettings])
@@ -236,144 +293,156 @@ export default function WorkoutPage() {
     const settled = (s: { status: string }) => s.status === 'success' || s.status === 'error'
     if (!settled(sessionsState) || !settled(setsState)) return
     dayPickedRef.current = true
-    setSelectedDay(pickPlanDay({
-      days,
-      planRows,
-      sessions: sessionsState.status === 'success' ? sessionsState.data || [] : [],
-      sets: setsState.status === 'success' ? setsState.data || [] : [],
-      todayNames: todayCandidateNames(),
-    }))
-  }, [days, planRows, sessionsState, setsState])
+    setSelectedDay(pickPlanDay({ days, planRows, sessions: allSessions, sets: allSets }))
+  }, [days, planRows, sessionsState, setsState, allSessions, allSets])
 
   useEffect(() => {
     if (sessionsState.status !== 'success') return
     const today = localDayKey()
     const existing = strengthSessions(sessionsState.data || [])
-      .find((x: any) => isSameLocalDay(x.date, today)) || null
+      .find(x => isSameLocalDay(x.date, today)) || null
     // Never downgrade a session we already hold: a reload of the sessions slice
     // that momentarily lacks the row just created would otherwise blank out the
     // active session, leaving the workout impossible to finish.
-    setSession((prev: any) => existing || prev)
+    setSession(prev => existing || prev)
   }, [sessionsState])
+
+  // Swaps and closed exercises come back from today's row once, when it first
+  // loads. From then on state is ahead of the row, never behind it.
+  useEffect(() => {
+    if (!session?.id || hydratedSessionRef.current === session.id) return
+    hydratedSessionRef.current = session.id
+    setSubstitutions(session.substitutions || {})
+    setClosedExercises(new Set(session.closedExercises || []))
+  }, [session])
+
+  // The day on screen is the day of the session. This covers a row that has
+  // none stored yet: without it a reload re-guesses the day from whatever was
+  // trained, extras included, and flips which exercises count as planned.
+  useEffect(() => {
+    if (!session?.id || !selectedDay || session.planDay === selectedDay) return
+    saveSessionFields({ planDay: selectedDay })
+    // `saveSessionFields` is rebuilt every render; these are the real inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, session?.planDay, selectedDay])
 
   // Single source of truth: today's sets are derived from the store, not copied
   // into local state. The copy used to be overwritten whenever loadSets
   // completed, which silently dropped a set that had just been added.
   const sets = useMemo(() => {
-    if (setsState.status !== 'success' || !session?.id) return []
-    return (setsState.data || [])
-      .filter((x: any) => x.sessionId === session.id)
-      .sort(byTimestamp)
-  }, [setsState, session])
+    if (!session?.id) return NO_SETS
+    return allSets.filter(x => x.sessionId === session.id).sort(byTimestamp)
+  }, [allSets, session?.id])
 
-  useEffect(() => {
-    if (!selectedDay || exercises.length === 0) return
-    const exMap = new Map(exercises.map((e: any) => [e.id, e]))
-    const planForDay = planRows
-      .filter(r => String(r.day) === String(selectedDay))
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    const planWorkout: WorkoutExercise[] = planForDay.map((p) => {
-      const ex = exMap.get(p.exerciseId) as { name?: string } | undefined
-      return {
-        id: p.exerciseId,
-        name: ex?.name || p.exerciseId,
-        targetSets: p.targetSets || fallbackTargetSets,
-        targetReps: p.targetReps || fallbackTargetReps,
-        fromPlan: true, completedSets: [], isActive: false,
-        note: p.note, targetRpe: p.targetRpe,
-      } as WorkoutExercise
+  // Today's list is derived too. Kept in state it had to be rebuilt by an
+  // effect, which is where swapped and extra exercises ended up counted as
+  // plan work still owed.
+  const workoutExercises = useMemo(() => {
+    if (exercises.length === 0) return []
+    return buildWorkoutList({
+      day: selectedDay, planRows, exercises, sets, substitutions, pendingExtras,
+      fallbackTargetSets, fallbackTargetReps,
     })
-    const planIds = new Set(planWorkout.map(e => e.id))
+  }, [selectedDay, planRows, exercises, sets, substitutions, pendingExtras, fallbackTargetSets, fallbackTargetReps])
 
-    setWorkoutExercises(prev => {
-      const extras = new Map<string, WorkoutExercise>()
-      // Off-plan exercises added earlier in this session, still in React state.
-      for (const e of prev || []) {
-        if (!e.fromPlan && !planIds.has(e.id)) extras.set(e.id, e)
-      }
-      // Off-plan exercises reconstructed from the sets already logged today.
-      // Without this an added exercise vanished on reload (and on any day
-      // switch), taking its logged sets out of sight even though they were
-      // safely in the database.
-      for (const s of sets) {
-        if (planIds.has(s.exerciseId) || extras.has(s.exerciseId)) continue
-        const ex = exMap.get(s.exerciseId) as { name?: string } | undefined
-        extras.set(s.exerciseId, {
-          id: s.exerciseId,
-          name: ex?.name || s.exerciseId,
-          targetSets: fallbackTargetSets,
-          targetReps: fallbackTargetReps,
-          fromPlan: false, completedSets: [], isActive: false,
-        })
-      }
-      const byExercise = new Map<string, any[]>()
-      for (const s of sets) {
-        const arr = byExercise.get(s.exerciseId)
-        if (arr) arr.push(s)
-        else byExercise.set(s.exerciseId, [s])
-      }
-      return [...planWorkout, ...extras.values()].map(e => ({
-        ...e,
-        completedSets: byExercise.get(e.id) || [],
-      }))
-    })
-  }, [selectedDay, exercises, planRows, sets, fallbackTargetSets, fallbackTargetReps])
+  const progress = useMemo(
+    () => sessionProgress(workoutExercises, closedExercises),
+    [workoutExercises, closedExercises]
+  )
+  const planCount = progress.planExercisesTotal
+  const extraCount = progress.extraExercises
 
-  // Keep the active index inside the list. Switching day, removing an exercise
-  // or dropping an off-plan one can shorten the array, and an index past the end
-  // rendered a blank screen with no way back.
-  useEffect(() => {
-    setActiveExIndex(i => Math.min(i, Math.max(0, workoutExercises.length - 1)))
-  }, [workoutExercises.length])
+  const activeExIndex = Math.max(0, workoutExercises.findIndex(e => e.id === activeId))
+  const activeEx: WorkoutItem | undefined = workoutExercises[activeExIndex]
+  const activeExerciseId = activeEx?.id
 
-  useEffect(() => {
-    setActiveExIndex(0)
-    setClosedExercises(new Set())
-  }, [selectedDay])
+  const inWorkoutIds = useMemo(() => new Set(workoutExercises.map(e => e.id)), [workoutExercises])
+  const doneTodayIds = useMemo(() => new Set(sets.map(s => s.exerciseId)), [sets])
 
-  useEffect(() => { setLastPr(null) }, [activeExIndex])
+  const dayStatus = useMemo(
+    () => weekDayStatus({ days, planRows, sessions: allSessions, sets: allSets }),
+    [days, planRows, allSessions, allSets]
+  )
+  /** Exercises already trained earlier this week — today's session excluded. */
+  const weekUsage = useMemo(
+    () => exerciseWeekUsage({ sessions: allSessions, sets: allSets, excludeSessionId: session?.id }),
+    [allSessions, allSets, session?.id]
+  )
+  const coverage = useMemo(
+    () => weekCoverage({
+      sessions: allSessions, sets: allSets, exercises,
+      thresholds: getThresholdsForMode(trainingMode, storedSettings.thresholdsByMode),
+    }),
+    [allSessions, allSets, exercises, trainingMode, storedSettings.thresholdsByMode]
+  )
+  const weekdayFmt = useMemo(() => new Intl.DateTimeFormat(lang, { weekday: 'short' }), [lang])
+  const dayDoneFmt = useMemo(
+    () => new Intl.DateTimeFormat(lang, { weekday: 'short', day: 'numeric', month: 'short' }),
+    [lang]
+  )
+
+  const activeExerciseData = useMemo(
+    () => exercises.find(e => e.id === activeExerciseId),
+    [exercises, activeExerciseId]
+  )
+  /** Where the week stands on the muscles the exercise on screen counts for. */
+  const activeVolume = useMemo(() => {
+    const byMuscle = new Map(coverage.map(c => [c.muscle, c]))
+    return [...countedMuscles(activeExerciseData).keys()]
+      .map(m => byMuscle.get(m))
+      .filter((c): c is MuscleCoverage => !!c)
+  }, [coverage, activeExerciseData])
+  const activeUsage = activeExerciseId ? weekUsage.get(activeExerciseId) : undefined
+
+  useEffect(() => { setLastPr(null) }, [activeExerciseId])
 
   useEffect(() => {
     if (!carouselRef.current) return
     const el = carouselRef.current.querySelector('[data-active="true"]') as HTMLElement | null
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-  }, [activeExIndex])
+  }, [activeExerciseId])
 
   const currentExerciseHistory = useMemo(() => {
-    if (!workoutExercises[activeExIndex] || setsState.status !== 'success') return []
-    const currentEx = workoutExercises[activeExIndex]
-    return (setsState.data || [])
-      .filter((s: any) => s.exerciseId === currentEx.id && s.sessionId !== session?.id)
-      .sort((a: any, b: any) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
-  }, [workoutExercises, activeExIndex, setsState, session])
+    if (!activeExerciseId) return NO_SETS
+    return allSets
+      .filter(s => s.exerciseId === activeExerciseId && s.sessionId !== session?.id)
+      .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+  }, [activeExerciseId, allSets, session?.id])
 
-  /** Returns false when the set could not be persisted, so SetRow keeps the input. */
   /**
    * Load and reps for the set about to be performed. Derived here rather than
    * inside SetRow because it needs the full exercise history and the tunables.
    */
   const prescription = useMemo(() => {
-    const ex = workoutExercises[activeExIndex]
-    if (!ex) return null
-    const target = parseRepTarget(ex.targetReps)
-    const reps = repsForSet(target, ex.completedSets.length, Number(fallbackTargetReps) || 8)
-    return suggestNextLoad(currentExerciseHistory as any, reps, {
-      targetRpe: ex.targetRpe,
+    if (!activeEx) return null
+    const target = parseRepTarget(activeEx.targetReps)
+    const reps = repsForSet(target, activeEx.completedSets.length, Number(fallbackTargetReps) || 8)
+    return suggestNextLoad(currentExerciseHistory, reps, {
+      targetRpe: activeEx.targetRpe,
       isDeload: deloadActive,
       increment: storedSettings.progressionStepKg ?? DEFAULT_PROGRESSION_STEP_KG,
       deloadFactor: storedSettings.deloadLoadFactor ?? DEFAULT_DELOAD_LOAD_FACTOR,
     })
-  }, [workoutExercises, activeExIndex, currentExerciseHistory, deloadActive, storedSettings, fallbackTargetReps])
+  }, [activeEx, currentExerciseHistory, deloadActive, storedSettings, fallbackTargetReps])
 
-  /** The same exercise in its previous session — the coach's comparison point. */
-  const previousSessionSets = useMemo(() => {
-    const ex = workoutExercises[activeExIndex]
-    if (!ex || setsState.status !== 'success') return []
-    return previousSessionSetsFor(setsState.data || [], ex.id, session?.id)
-  }, [workoutExercises, activeExIndex, setsState, session])
+  /** A real day switch: what the athlete closed belonged to the day being left. */
+  function switchDay(day: string) {
+    if (day === selectedDay) return
+    // A swap that never got a set goes with the old day; one that was trained
+    // stays, so tapping the wrong day cannot turn done plan work into extras.
+    const kept = Object.fromEntries(
+      Object.entries(substitutions).filter(([, substitute]) => doneTodayIds.has(substitute))
+    )
+    setSelectedDay(day)
+    setActiveId(null)
+    setClosedExercises(new Set())
+    setSubstitutions(kept)
+    saveSessionFields({ planDay: day, closedExercises: [], substitutions: kept })
+  }
 
+  /** Returns false when the set could not be persisted, so SetRow keeps the input. */
   async function addSet(
-    exIndex: number,
+    ex: WorkoutItem,
     p: {
       weight: number
       reps: number
@@ -384,8 +453,6 @@ export default function WorkoutPage() {
       flags?: SetFlag[]
     }
   ): Promise<boolean> {
-    const ex = workoutExercises[exIndex]
-    if (!ex) return false
     try {
       const currentSession = await ensureSession()
       if (!currentSession?.id) return false
@@ -408,13 +475,12 @@ export default function WorkoutPage() {
         // rows already in DynamoDB, stay mutually readable.
         note: buildLegacyNote({ toFailure: p.toFailure, intensity: p.intensity, comment: p.comment }),
       }
-      const res = await fetch('/api/data/sets', { method: 'POST', body: JSON.stringify(newSet) })
-      if (!res.ok) throw new Error(`save set ${res.status}`)
-      const { id } = await res.json()
+      const { id } = await apiJson<{ id?: string }>('/api/data/sets', { method: 'POST', body: JSON.stringify(newSet) })
       if (!id) throw new Error('save set: missing id')
 
-      const fullNewSet = { id, ...newSet }
-      addSetOptimistic(fullNewSet)
+      // The card must stay under the athlete's hands while the list re-derives.
+      setActiveId(ex.id)
+      addSetOptimistic({ id, ...newSet })
       // `addSetOptimistic` is a no-op unless the slice already loaded; refetch so
       // the set the athlete just saved cannot go missing from the screen.
       if (setsState.status !== 'success') loadSets(true)
@@ -425,18 +491,16 @@ export default function WorkoutPage() {
       // Tell the athlete they beat their own record while they are still at the
       // rack. `currentExerciseHistory` excludes today, so the set just saved is
       // compared only against previous sessions.
-      const pr = detectPR({ exerciseId: ex.id, weight: p.weight, reps: p.reps }, currentExerciseHistory as any)
+      const pr = detectPR({ exerciseId: ex.id, weight: p.weight, reps: p.reps }, currentExerciseHistory)
       setLastPr(pr)
       if (prTimerRef.current) clearTimeout(prTimerRef.current)
       if (pr) prTimerRef.current = setTimeout(() => setLastPr(null), 6000)
 
       if (autoStartRest) setRestSignal(n => n + 1)
 
-      // Saving a set no longer moves the athlete anywhere, and no longer wakes
-      // the coach. Hitting the target set count is a guess about being done —
-      // the athlete says so explicitly with `finishExercise`. Auto-advancing on
-      // the last set also meant the coach read a stale `workoutExercises`, so
-      // its debrief was missing the very set that had just triggered it.
+      // Saving a set does not move the athlete anywhere and does not wake the
+      // coach. Hitting the target set count is a guess about being done — the
+      // athlete says so explicitly with `finishExercise`.
       return true
     } catch (e) {
       console.error('Failed to save set:', e)
@@ -444,74 +508,128 @@ export default function WorkoutPage() {
     }
   }
 
+  function saveClosed(next: Set<string>) {
+    setClosedExercises(next)
+    saveSessionFields({ closedExercises: [...next] })
+  }
+
   /**
    * The athlete declaring an exercise over. This is the only thing that wakes
    * the coach and the only thing that moves the carousel: the app cannot tell
    * a finished exercise from one that merely reached its planned set count.
    */
-  function finishExercise(index: number) {
-    const ex = workoutExercises[index]
-    if (!ex || ex.completedSets.length === 0 || !session?.id) return
+  function finishExercise(ex: WorkoutItem) {
+    if (ex.completedSets.length === 0 || !session?.id) return
 
     const closed = new Set(closedExercises).add(ex.id)
-    setClosedExercises(closed)
+    saveClosed(closed)
     setDebriefTrigger(`${session.id}:${ex.id}`)
 
     // Next exercise still owing work, scanning forward and wrapping around, so
     // an exercise skipped earlier isn't stranded behind the current one.
     const n = workoutExercises.length
+    const index = workoutExercises.findIndex(e => e.id === ex.id)
     for (let step = 1; step < n; step++) {
-      const i = (index + step) % n
-      if (!isExerciseFinished(workoutExercises[i], closed)) {
-        setActiveExIndex(i)
+      const next = workoutExercises[(index + step) % n]
+      if (!isItemFinished(next, closed)) {
+        setActiveId(next.id)
         return
       }
     }
+    setActiveId(ex.id)
   }
 
-  function removeExercise(index: number) {
-    setWorkoutExercises(prev => prev.filter((_, i) => i !== index))
+  function reopenExercise(exId: string) {
+    const next = new Set(closedExercises)
+    next.delete(exId)
+    saveClosed(next)
+  }
+
+  function removeExercise(exId: string) {
+    setPendingExtras(prev => prev.filter(id => id !== exId))
+    setActiveId(null)
   }
 
   async function removeSet(setId: string) {
+    const removed = sets.find(s => s.id === setId)
+    const item = removed && workoutExercises.find(e => e.id === removed.exerciseId)
+    // An extra exists on the list only through its sets: keep the card when
+    // the last one goes, or it would vanish from under the athlete's finger.
+    if (item && !item.fromPlan) {
+      setActiveId(item.id)
+      setPendingExtras(prev => (prev.includes(item.id) ? prev : [...prev, item.id]))
+    }
     removeSetOptimistic(setId)
-    try { await fetch(`/api/data/sets/${setId}`, { method: 'DELETE' }) }
-    catch (e) { console.error('Failed to delete set:', e) }
+    try {
+      await apiFetch(`/api/data/sets/${setId}`, { method: 'DELETE' })
+    } catch (e) {
+      console.error('Failed to delete set:', e)
+      // Still in the database: put it back rather than show a deletion that
+      // did not happen.
+      if (removed) addSetOptimistic(removed)
+      else loadSets(true)
+      toast.error(t.common.saveFailed)
+    }
+  }
+
+  function saveSubstitutions(next: Record<string, string>) {
+    setSubstitutions(next)
+    saveSessionFields({ substitutions: next })
+  }
+
+  function undoSubstitution(plannedId: string) {
+    const next = { ...substitutions }
+    delete next[plannedId]
+    saveSubstitutions(next)
+    setActiveId(plannedId)
+  }
+
+  /** `pickedId` takes the slot of `plannedId` for today. */
+  function substitute(plannedId: string, pickedId: string) {
+    if (pickedId === plannedId) {
+      if (substitutions[plannedId]) undoSubstitution(plannedId)
+      else setActiveId(plannedId)
+      return
+    }
+    // An exercise that holds a slot of its own today cannot fill another one.
+    const plannedToday = planRows.some(r => String(r.day) === String(selectedDay) && r.exerciseId === pickedId)
+    if (plannedToday || workoutExercises.some(e => e.fromPlan && e.id === pickedId)) {
+      if (inWorkoutIds.has(pickedId)) setActiveId(pickedId)
+      return
+    }
+    saveSubstitutions({ ...substitutions, [plannedId]: pickedId })
+    setPendingExtras(prev => prev.filter(id => id !== pickedId))
+    setActiveId(pickedId)
   }
 
   function addExerciseToWorkout(exId: string) {
-    const ex = exercises.find((e: any) => e.id === exId)
-    if (!ex) return
-    setShowExercisePicker(false)
-
     // Already in today's list (from the plan or added earlier)? Jump to it
     // instead of appending a duplicate that would split the same exercise
     // across two cards and double-count it in the progress header.
-    const existing = workoutExercises.findIndex(e => e.id === ex.id)
-    if (existing !== -1) {
-      setActiveExIndex(existing)
+    if (inWorkoutIds.has(exId)) {
+      setActiveId(exId)
       return
     }
-
-    const newEx: WorkoutExercise = {
-      id: ex.id,
-      name: ex.name,
-      targetSets: fallbackTargetSets,
-      targetReps: fallbackTargetReps,
-      fromPlan: false,
-      completedSets: sets.filter(s => s.exerciseId === ex.id).sort(byTimestamp),
-      isActive: false,
+    // Picking the planned exercise back while its substitute is untouched is
+    // an undo, not an extra.
+    const slot = workoutExercises.find(e => e.replaces === exId)
+    if (slot && slot.completedSets.length === 0) {
+      undoSubstitution(exId)
+      return
     }
-    setWorkoutExercises(prev => {
-      const arr = [...prev, newEx]
-      setActiveExIndex(arr.length - 1)
-      return arr
-    })
+    setPendingExtras(prev => [...prev, exId])
+    setActiveId(exId)
   }
 
-  const hasCompletedSets = workoutExercises.some(ex => ex.completedSets.length > 0)
-  const activeEx = workoutExercises[activeExIndex]
-  const inWorkoutIds = useMemo(() => new Set(workoutExercises.map(e => e.id)), [workoutExercises])
+  function handlePick(exId: string) {
+    const mode = picker
+    setPicker(null)
+    if (!exercises.some(e => e.id === exId)) return
+    if (mode?.mode === 'replace') substitute(mode.plannedId, exId)
+    else addExerciseToWorkout(exId)
+  }
+
+  const hasCompletedSets = sets.length > 0
 
   /** The exercise the pending debrief is about — not the one now on screen. */
   const debriefExercise = useMemo(() => {
@@ -520,8 +638,13 @@ export default function WorkoutPage() {
     return workoutExercises.find(e => e.id === exId)
   }, [debriefTrigger, workoutExercises])
 
-  const totalSets = workoutExercises.reduce((acc, e) => acc + e.targetSets, 0)
-  const doneSets = workoutExercises.reduce((acc, e) => acc + e.completedSets.length, 0)
+  const replaceFor = picker?.mode === 'replace'
+    ? exercises.find(e => e.id === picker.plannedId)
+    : undefined
+  // A swap is sized by the slot it fills, an extra by the default set count.
+  const pickerSets = picker?.mode === 'replace'
+    ? workoutExercises.find(e => (e.replaces ?? e.id) === picker.plannedId)?.targetSets ?? fallbackTargetSets
+    : fallbackTargetSets
 
   return (
     <div className="space-y-5 -mt-2">
@@ -530,55 +653,95 @@ export default function WorkoutPage() {
       {/* Top bar: day picker + timer / start */}
       <header className="flex items-center justify-between gap-3">
         {days.length > 0 ? (
-          <select
-            value={selectedDay}
-            onChange={e => setSelectedDay(e.target.value)}
-            className="appearance-none bg-transparent text-[11px] uppercase tracking-[0.14em] font-semibold text-muted pr-5 cursor-pointer"
-            style={{
-              backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\' fill=\'none\'%3E%3Cpath d=\'M1 1l4 4 4-4\' stroke=\'%236b6962\' stroke-width=\'1.4\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E")',
-              backgroundRepeat: 'no-repeat', backgroundPosition: 'right center', backgroundSize: '10px 6px',
-            }}
-          >
-            {days.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
+            {dayStatus.map(({ day, doneOn }) => {
+              const selected = day === selectedDay
+              const doneLabel = doneOn
+                ? t.workout.dayDoneOn.replace('{date}', formatDate(dayDoneFmt, dayKeyToDate(doneOn)))
+                : undefined
+              return (
+                <button
+                  key={day}
+                  onClick={() => switchDay(day)}
+                  aria-pressed={selected}
+                  aria-label={doneLabel ? `${day}, ${doneLabel}` : day}
+                  title={doneLabel}
+                  className={`flex-shrink-0 inline-flex items-center gap-1 rounded-full px-3 py-1.5 border
+                    text-[11px] uppercase tracking-[0.14em] font-semibold transition-colors
+                    ${selected ? 'bg-ink text-white border-ink' : 'text-muted border-ink/10'}`}
+                >
+                  {day}
+                  {doneOn && (
+                    <Check size={11} strokeWidth={2.8} className={selected ? '' : 'text-success'} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
         ) : <span className="eyebrow">{t.workout.eyebrowDay}</span>}
 
         {/* Always mounted: when there is no startTime the component renders its
             own Start button. Gating the mount on `startTime` meant the button
             could never appear and `startWorkout` was unreachable — the timer
             only ever began as a side effect of saving the first set. */}
-        <WorkoutTimer startTime={session?.startTime ?? null} onStart={startWorkout} />
+        <div className="shrink-0">
+          <WorkoutTimer startTime={session?.startTime ?? null} onStart={startWorkout} />
+        </div>
       </header>
 
       {/* Hero: progress + exercise carousel */}
       {workoutExercises.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
+            {/* Plan slots and extras are numbered apart: an extra is not the
+                sixth exercise of a five-exercise plan. */}
             <div className="text-[13px] num text-muted">
-              {t.workout.exerciseLabel}{' '}
-              <span className="text-ink font-semibold">
-                {String(activeExIndex + 1).padStart(2, '0')}
-              </span>{' '}
-              {t.workout.ofConnector}{' '}
-              <span className="text-ink font-semibold">
-                {String(workoutExercises.length).padStart(2, '0')}
-              </span>
+              {activeEx?.fromPlan ? (
+                <>
+                  {t.workout.exerciseLabel}{' '}
+                  <span className="text-ink font-semibold">{String(activeExIndex + 1).padStart(2, '0')}</span>{' '}
+                  {t.workout.ofConnector}{' '}
+                  <span className="text-ink font-semibold">{String(planCount).padStart(2, '0')}</span>
+                </>
+              ) : (
+                <>
+                  {t.workout.offPlanBadge}
+                  {extraCount > 1 && (
+                    <>
+                      {' '}
+                      <span className="text-ink font-semibold">{String(activeExIndex - planCount + 1).padStart(2, '0')}</span>{' '}
+                      {t.workout.ofConnector}{' '}
+                      <span className="text-ink font-semibold">{String(extraCount).padStart(2, '0')}</span>
+                    </>
+                  )}
+                </>
+              )}
             </div>
             <div className="text-[11px] num text-muted">
-              <span className="text-ink font-semibold">{doneSets}</span>/{totalSets} {t.workout.setsTotalSuffix}
+              {planCount > 0 && (
+                <>
+                  <span className="text-ink font-semibold">{progress.planSetsDone}</span>/{progress.planSetsTarget} {t.workout.planSetsSuffix}
+                </>
+              )}
+              {progress.extraSets > 0 && (
+                <>
+                  {planCount > 0 && <span className="opacity-30 mx-1.5">·</span>}
+                  +<span className="text-ink font-semibold">{progress.extraSets}</span> {t.workout.extraSetsSuffix}
+                </>
+              )}
             </div>
           </div>
 
           <div ref={carouselRef} className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
             {workoutExercises.map((ex, i) => {
               const isActive = i === activeExIndex
-              const isDone = isExerciseFinished(ex, closedExercises)
+              const isDone = isItemFinished(ex, closedExercises)
               const isPending = !isActive && !isDone && ex.completedSets.length === 0
               return (
                 <button
-                  key={`${ex.id}-${i}`}
+                  key={ex.id}
                   data-active={isActive}
-                  onClick={() => setActiveExIndex(i)}
+                  onClick={() => setActiveId(ex.id)}
                   className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full text-[12px] font-medium px-3 py-2 transition-all
                     ${isActive
                       ? 'bg-ink text-white'
@@ -591,7 +754,7 @@ export default function WorkoutPage() {
                 >
                   <span className={`text-[9px] font-bold num px-1 py-0.5 rounded
                     ${isActive ? 'bg-white/15 text-white/85' : 'bg-paper-sunken text-muted-2'}`}>
-                    {String(i + 1).padStart(2, '0')}
+                    {ex.fromPlan ? String(i + 1).padStart(2, '0') : '+'}
                   </span>
                   <span className="truncate max-w-[120px]">{ex.name}</span>
                   {isDone && !isActive && <Check size={11} strokeWidth={2.6} />}
@@ -599,7 +762,7 @@ export default function WorkoutPage() {
               )
             })}
             <button
-              onClick={() => setShowExercisePicker(true)}
+              onClick={() => setPicker({ mode: 'add' })}
               className="flex-shrink-0 inline-flex items-center gap-1 rounded-full px-3 py-2
                          text-[12px] font-medium text-muted border border-dashed border-ink/15"
             >
@@ -613,7 +776,7 @@ export default function WorkoutPage() {
           day has exercises: a day with no plan rows had no way to add any. */}
       {workoutExercises.length === 0 && plansLoaded && exercises.length > 0 && (
         <button
-          onClick={() => setShowExercisePicker(true)}
+          onClick={() => setPicker({ mode: 'add' })}
           className="w-full inline-flex items-center justify-center gap-1.5 rounded-full py-3.5
                      text-[14px] font-medium text-muted border border-dashed border-ink/15"
         >
@@ -653,11 +816,58 @@ export default function WorkoutPage() {
                 {t.workout.offPlanBadge}
               </div>
             )}
+            {activeEx.replaces && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted">
+                <span className="inline-flex items-center gap-1.5">
+                  <ArrowLeftRight size={12} strokeWidth={2.2} />
+                  {t.workout.substituteFor.replace('{name}', activeEx.replacesName || activeEx.replaces)}
+                </span>
+                {activeEx.completedSets.length === 0 && (
+                  <button
+                    onClick={() => undoSubstitution(activeEx.replaces!)}
+                    className="underline underline-offset-2 text-ink-soft"
+                  >
+                    {t.workout.undoSubstituteBtn.replace('{name}', activeEx.replacesName || activeEx.replaces)}
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="mt-2.5 space-y-1.5">
+              <MuscleChips primaryMuscles={activeExerciseData?.primaryMuscles} />
+              {activeVolume.length > 0 && (
+                <div className="text-[12px] text-muted num">
+                  <span className="label !text-[9px] mr-1.5">{t.workout.weekVolumeLabel}</span>
+                  {activeVolume.map((c, i) => (
+                    <span key={c.muscle}>
+                      {i > 0 && <span className="opacity-30 mx-1.5">·</span>}
+                      <span className={c.target === null ? '' : c.sets >= c.target ? 'text-success' : 'text-warning'}>
+                        {t.muscles[c.muscle] || c.muscle} {c.sets}{c.target !== null && `/${c.target}`}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            {activeUsage && (
+              <div className="mt-2.5 rounded-xl bg-warning/10 text-warning px-3.5 py-2 text-[12px] font-medium">
+                {t.workout.doneThisWeekNotice
+                  .replace('{day}', formatDate(weekdayFmt, activeUsage.lastTs))
+                  .replace('{sets}', String(activeUsage.sets))}
+              </div>
+            )}
             {activeEx.note && (
               <div className="mt-3 rounded-xl bg-paper-card border border-ink/[0.06] px-3.5 py-2.5 text-[13px] text-ink-soft leading-snug">
                 <span className="label !text-[9px] block mb-1">{t.workout.planNote}</span>
                 {activeEx.note}
               </div>
+            )}
+            {activeEx.fromPlan && activeEx.completedSets.length === 0 && (
+              <button
+                onClick={() => setPicker({ mode: 'replace', plannedId: activeEx.replaces ?? activeEx.id })}
+                className="btn-ghost text-[13px] text-muted mt-2 -ml-2"
+              >
+                <ArrowLeftRight size={14} strokeWidth={2.2} /> {t.workout.substituteBtn}
+              </button>
             )}
           </div>
 
@@ -677,7 +887,7 @@ export default function WorkoutPage() {
 
           <div className="card p-4">
             <SetRow
-              onSave={(p) => addSet(activeExIndex, p)}
+              onSave={(p) => addSet(activeEx, p)}
               lastSet={activeEx.completedSets[activeEx.completedSets.length - 1]}
               targetReps={repsForSet(
                 parseRepTarget(activeEx.targetReps),
@@ -706,36 +916,41 @@ export default function WorkoutPage() {
                 // Today's plan in its own order, with how far each row got. The
                 // coach reads the reshuffles off this: a busy station turns a
                 // planned opener into a closer, and the loads follow.
+                // Slots are named after the PLANNED exercise; `substitutions`
+                // says which ones were filled by something else.
                 plannedToday: workoutExercises
                   .filter(e => e.fromPlan)
                   .map((e, idx) => ({
-                    exerciseId: e.id,
-                    exerciseName: e.name,
+                    exerciseId: e.replaces ?? e.id,
+                    exerciseName: e.replacesName ?? e.name,
                     position: idx + 1,
                     targetSets: e.targetSets,
                     targetReps: e.targetReps,
                     targetRpe: e.targetRpe,
                     note: e.note,
                     setsDone: e.completedSets.length,
-                    done: isExerciseFinished(e, closedExercises),
+                    done: isItemFinished(e, closedExercises),
                   })),
+                substitutions: effectiveSubstitutions(workoutExercises),
                 todaySets: ex.completedSets,
-                previousSets: previousSessionSetsFor(setsState.data || [], ex.id, session?.id),
+                previousSets: previousSessionSetsFor(allSets, ex.id, session?.id),
                 targetSets: ex.targetSets,
                 targetReps: ex.targetReps,
                 targetRpe: ex.targetRpe,
                 offPlan: !ex.fromPlan,
-                exercisesDone: workoutExercises.filter(e => isExerciseFinished(e, closedExercises)).length,
-                exercisesTotal: workoutExercises.length,
+                exercisesDone: progress.planExercisesDone,
+                exercisesTotal: progress.planExercisesTotal,
                 // The coach sees the whole session, growing with every exercise
                 // closed — not just the one that triggered this debrief.
                 sessionSoFar: workoutExercises
                   .filter(e => e.completedSets.length > 0)
                   .map(e => ({ exerciseId: e.id, exerciseName: e.name, sets: e.completedSets })),
-                sessions: sessionsState.data || [],
-                sets: setsState.data || [],
+                sessions: allSessions,
+                sets: allSets,
                 exercises,
                 plan: planRows,
+                dayOrder: days,
+                week: clientWeek(),
                 trainingMode,
                 lang,
               }
@@ -758,7 +973,7 @@ export default function WorkoutPage() {
             <div className="space-y-2">
               <div className="label">{t.workout.setsToday}</div>
               <div className="space-y-1.5">
-                {activeEx.completedSets.map((s: any, j: number) => {
+                {activeEx.completedSets.map((s, j) => {
                   // The note was written but never shown back: until now the
                   // athlete had no way to check what they had just recorded.
                   const noteText = formatSetNoteOf(s, t.setRow.intensityOpts)
@@ -801,18 +1016,14 @@ export default function WorkoutPage() {
           {activeEx.completedSets.length > 0 && (
             closedExercises.has(activeEx.id) ? (
               <button
-                onClick={() => setClosedExercises(prev => {
-                  const next = new Set(prev)
-                  next.delete(activeEx.id)
-                  return next
-                })}
+                onClick={() => reopenExercise(activeEx.id)}
                 className="btn-ghost text-sm w-full justify-center text-muted"
               >
                 {t.workout.reopenExerciseBtn}
               </button>
             ) : (
               <button
-                onClick={() => finishExercise(activeExIndex)}
+                onClick={() => finishExercise(activeEx)}
                 className={`w-full justify-center py-3.5 rounded-full text-[14px] ${
                   activeEx.completedSets.length >= activeEx.targetSets ? 'btn-primary' : 'btn'
                 }`}
@@ -823,8 +1034,7 @@ export default function WorkoutPage() {
           )}
 
           {(() => {
-            const exData = exercises.find((e: any) => e.id === activeEx.id) as { primaryMuscles?: any } | undefined
-            const restPreset = getRestPresetForExercise(exData?.primaryMuscles, {
+            const restPreset = getRestPresetForExercise(activeExerciseData?.primaryMuscles, {
               compoundMuscles: storedSettings.compoundMuscles,
               isolationMuscles: storedSettings.isolationMuscles,
               restCompoundSec: storedSettings.restCompoundSec,
@@ -850,7 +1060,7 @@ export default function WorkoutPage() {
               so "remove" would silently do nothing. Delete the sets instead. */}
           {!activeEx.fromPlan && activeEx.completedSets.length === 0 && (
             <button
-              onClick={() => removeExercise(activeExIndex)}
+              onClick={() => removeExercise(activeEx.id)}
               className="btn-ghost text-sm text-danger w-full justify-center"
             >
               {t.workout.removeExerciseBtn}
@@ -879,18 +1089,23 @@ export default function WorkoutPage() {
         </button>
       </div>
 
-      {showExercisePicker && (
+      {picker && (
         <ExercisePicker
           exercises={exercises}
-          sessions={sessionsState.status === 'success' ? sessionsState.data || [] : []}
-          sets={setsState.status === 'success' ? setsState.data || [] : []}
+          sessions={allSessions}
+          sets={allSets}
           planRows={planRows}
           days={days}
           selectedDay={selectedDay}
           inWorkoutIds={inWorkoutIds}
+          doneTodayIds={doneTodayIds}
+          weekUsage={weekUsage}
+          coverage={coverage}
+          impactSets={pickerSets}
+          replaceFor={replaceFor}
           currentExerciseId={activeEx?.id}
-          onPick={addExerciseToWorkout}
-          onClose={() => setShowExercisePicker(false)}
+          onPick={handlePick}
+          onClose={() => setPicker(null)}
         />
       )}
 
